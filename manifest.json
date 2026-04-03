@@ -1,0 +1,11 @@
+{
+  "id": "dither",
+  "name": "Dither",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "Paste or drop images and dither them to black & white with live preview, saving storage space.",
+  "author": "Claire Froelich",
+  "authorUrl": "https://github.com/clairefro",
+  "fundingUrl": "https://buymeacoffee.com/clairefro",
+  "isDesktopOnly": false
+}
