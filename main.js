@@ -34,10 +34,10 @@ var PRESETS = [
   },
   {
     name: "Small",
-    algorithm: "ordered",
+    algorithm: "floyd-steinberg",
     threshold: 128,
     spread: 20,
-    resizePercent: 60
+    resizePercent: 30
   },
   {
     name: "Sharp",
@@ -59,12 +59,18 @@ var ImageDitherPlugin = class extends import_obsidian.Plugin {
   }
   async onload() {
     await this.loadSettings();
-    this.ribbonIconEl = this.addRibbonIcon("image", "Toggle Image Dither", () => {
-      this.settings.enabled = !this.settings.enabled;
-      void this.saveSettings();
-      this.updateRibbonState();
-      new import_obsidian.Notice(`Image Dither ${this.settings.enabled ? "enabled" : "disabled"}`);
-    });
+    this.ribbonIconEl = this.addRibbonIcon(
+      "image",
+      "Toggle Image Dither",
+      () => {
+        this.settings.enabled = !this.settings.enabled;
+        void this.saveSettings();
+        this.updateRibbonState();
+        new import_obsidian.Notice(
+          `Image Dither ${this.settings.enabled ? "enabled" : "disabled"}`
+        );
+      }
+    );
     this.updateRibbonState();
     this.registerEvent(
       this.app.workspace.on(
@@ -138,10 +144,12 @@ var ImageDitherPlugin = class extends import_obsidian.Plugin {
 var DitherModal = class extends import_obsidian.Modal {
   constructor(app, file, view, onClose) {
     super(app);
+    this.ditherNameBase = "";
     this.algorithm = "floyd-steinberg";
     this.threshold = 128;
     this.spread = 30;
     this.resizePercent = 100;
+    this.invertColors = false;
     this.originalBytes = 0;
     this.originalPreviewUrl = null;
     this.previewUpdateTimer = null;
@@ -174,6 +182,7 @@ var DitherModal = class extends import_obsidian.Modal {
     this.previewBeforeInfo = beforeCard.createDiv({
       cls: "dither-preview-meta"
     });
+    this.previewBeforeName = beforeCard.createDiv({ cls: "dither-preview-name" });
     const afterCard = previewGrid.createDiv({ cls: "dither-preview-card" });
     afterCard.createDiv({ cls: "dither-preview-label", text: "Dithered" });
     const afterFrame = afterCard.createDiv({ cls: "dither-preview" });
@@ -181,8 +190,18 @@ var DitherModal = class extends import_obsidian.Modal {
       attr: { alt: "Dithered preview" }
     });
     this.previewAfterInfo = afterCard.createDiv({ cls: "dither-preview-meta" });
+    const afterNameRow = afterCard.createDiv({ cls: "dither-filename-row" });
+    this.ditherNameInput = afterNameRow.createEl("input", {
+      cls: "dither-filename-input",
+      attr: { type: "text", spellcheck: "false", placeholder: "filename" }
+    });
+    afterNameRow.createDiv({ cls: "dither-filename-ext", text: ".png" });
+    this.ditherNameBase = `${stripExtension(this.file.name)}-dither`;
+    this.ditherNameInput.value = sanitizeFileBaseName(this.ditherNameBase);
     this.previewSavings = previewCol.createDiv({ cls: "dither-savings" });
-    const controlsWrap = this.contentEl.createDiv({ cls: "dither-controls-wrap" });
+    const controlsWrap = this.contentEl.createDiv({
+      cls: "dither-controls-wrap"
+    });
     controlsWrap.style.width = "100%";
     const controls = controlsWrap.createDiv();
     controls.addClass("dither-controls");
@@ -235,6 +254,8 @@ var DitherModal = class extends import_obsidian.Modal {
       cls: "dither-value",
       text: `${this.resizePercent}%`
     });
+    this.resizeValueEl = resizeValue;
+    this.updateResizeValueLabel();
     const presetRow = controls.createDiv({ cls: "dither-row" });
     presetRow.createEl("label", { text: "Preset" });
     const presetSelect = presetRow.createEl("select");
@@ -249,10 +270,17 @@ var DitherModal = class extends import_obsidian.Modal {
       `<option value="">Custom</option>`
     );
     presetSelect.value = "";
+    const invertRow = controls.createDiv({ cls: "dither-row" });
+    invertRow.createEl("label", { text: "Invert colors" });
+    const invertToggle = invertRow.createEl("input", {
+      attr: { type: "checkbox" }
+    });
+    invertToggle.checked = this.invertColors;
+    invertRow.createDiv({ cls: "dither-value", text: "" });
     const actions = controls.createDiv({ cls: "dither-actions" });
     const cancelBtn = actions.createEl("button", { text: "Cancel" });
     const useOriginalBtn = actions.createEl("button", {
-      text: "Use original image"
+      text: "Use original"
     });
     const saveBtn = actions.createEl("button", { text: "Use dithered" });
     saveBtn.addClass("mod-cta");
@@ -277,7 +305,12 @@ var DitherModal = class extends import_obsidian.Modal {
     });
     resizeInput.addEventListener("input", () => {
       this.resizePercent = Number(resizeInput.value);
-      resizeValue.setText(`${this.resizePercent}%`);
+      this.updateResizeValueLabel();
+      presetSelect.value = "";
+      this.queuePreviewUpdate();
+    });
+    invertToggle.addEventListener("change", () => {
+      this.invertColors = invertToggle.checked;
       presetSelect.value = "";
       this.queuePreviewUpdate();
     });
@@ -294,7 +327,7 @@ var DitherModal = class extends import_obsidian.Modal {
       resizeInput.value = String(this.resizePercent);
       thresholdValue.setText(String(this.threshold));
       spreadValue.setText(`${this.spread}%`);
-      resizeValue.setText(`${this.resizePercent}%`);
+      this.updateResizeValueLabel();
       this.queuePreviewUpdate();
     });
     cancelBtn.addEventListener("click", () => this.close());
@@ -312,9 +345,12 @@ var DitherModal = class extends import_obsidian.Modal {
   }
   async loadOriginal() {
     this.originalBytes = this.file.size;
+    if (this.previewBeforeName) {
+      this.previewBeforeName.setText(this.file.name);
+    }
     if (this.useOriginalBtn) {
       this.useOriginalBtn.setText(
-        `Use original image (${formatBytes(this.originalBytes)})`
+        `Use original (${formatBytes(this.originalBytes)})`
       );
     }
     if (this.useDitheredBtn) {
@@ -327,6 +363,7 @@ var DitherModal = class extends import_obsidian.Modal {
     const img = new Image();
     img.onload = () => {
       this.originalImage = img;
+      this.updateResizeValueLabel();
       this.queuePreviewUpdate(true);
     };
     img.src = this.originalPreviewUrl;
@@ -369,19 +406,25 @@ var DitherModal = class extends import_obsidian.Modal {
       (this.originalBytes - blob.size) / this.originalBytes * 1e3
     ) / 10 : 0;
     const largerBy = blob.size - this.originalBytes;
-    const isDanger = savedPercent >= 100 || savedPercent < 0;
-    const isWarn = savedPercent >= 90 && savedPercent < 100;
-    this.previewBeforeInfo.setText(`Size: ${formatBytes(this.originalBytes)}`);
-    this.previewAfterInfo.setText(`Size: ${formatBytes(blob.size)}`);
+    const isDanger = savedPercent <= 0;
+    const isWarn = savedPercent > 0 && savedPercent <= 10;
+    this.previewBeforeInfo.setText(
+      `${formatBytes(this.originalBytes)}
+${this.originalImage.naturalWidth} x ${this.originalImage.naturalHeight} px`
+    );
+    this.previewAfterInfo.setText(
+      `${formatBytes(blob.size)}
+${width} x ${height} px`
+    );
     this.previewSavings.setText(
-      isDanger ? `Saved: ${savedPercent}% (larger by ${formatBytes(Math.max(0, largerBy))})` : `Saved: ${savedPercent}% (${formatBytes(savedBytes)})`
+      isDanger ? `Saved: ${savedPercent}% (larger by ${formatBytes(Math.max(0, largerBy))})` : `Saved: ${savedPercent}% (-${formatBytes(savedBytes)})`
     );
     this.previewSavings.toggleClass("is-danger", isDanger);
     this.previewSavings.toggleClass("is-warn", isWarn);
     this.previewSavings.toggleClass("is-good", !isDanger && !isWarn);
     this.previewSavings.style.color = isDanger ? "var(--text-error)" : isWarn ? "var(--text-warning, #d9a620)" : "var(--text-success, #4caf50)";
     if (this.useDitheredBtn) {
-      const label = isDanger ? `Use dithered (+${Math.abs(savedPercent)}%, ${formatBytes(blob.size)})` : `Use dithered (-${savedPercent}%, ${formatBytes(blob.size)})`;
+      const label = isDanger ? `Use dithered (${formatBytes(blob.size)}, +${Math.abs(savedPercent)}%)` : `Use dithered (${formatBytes(blob.size)}, -${savedPercent}%)`;
       this.useDitheredBtn.setText(label);
     }
   }
@@ -391,6 +434,10 @@ var DitherModal = class extends import_obsidian.Modal {
     const targetHeight = Math.max(1, Math.round(originalHeight * scale));
     return { width: targetWidth, height: targetHeight };
   }
+  updateResizeValueLabel() {
+    if (!this.resizeValueEl) return;
+    this.resizeValueEl.setText(`${this.resizePercent}%`);
+  }
   applyDither(imageData) {
     const data = imageData.data;
     const width = imageData.width;
@@ -399,14 +446,19 @@ var DitherModal = class extends import_obsidian.Modal {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const idx = (y * width + x) * 4;
-        grayBase[y * width + x] = toGray(data[idx], data[idx + 1], data[idx + 2]);
+        grayBase[y * width + x] = toGray(
+          data[idx],
+          data[idx + 1],
+          data[idx + 2]
+        );
       }
     }
     applySharpness(grayBase, width, height, this.spread / 100);
     if (this.algorithm === "none") {
       for (let i = 0; i < data.length; i += 4) {
         const gray = grayBase[i / 4];
-        const v = gray > this.threshold ? 255 : 0;
+        const bw = gray > this.threshold ? 255 : 0;
+        const v = this.invertColors ? 255 - bw : bw;
         data[i] = v;
         data[i + 1] = v;
         data[i + 2] = v;
@@ -416,7 +468,8 @@ var DitherModal = class extends import_obsidian.Modal {
     if (this.algorithm === "threshold") {
       for (let i = 0; i < data.length; i += 4) {
         const gray = grayBase[i / 4];
-        const v = gray > this.threshold ? 255 : 0;
+        const bw = gray > this.threshold ? 255 : 0;
+        const v = this.invertColors ? 255 - bw : bw;
         data[i] = v;
         data[i + 1] = v;
         data[i + 2] = v;
@@ -436,7 +489,8 @@ var DitherModal = class extends import_obsidian.Modal {
           const idx = (y * width + x) * 4;
           const gray = grayBase[y * width + x];
           const threshold = bayer[y % 4][x % 4] / scale * 255;
-          const v = gray > threshold ? 255 : 0;
+          const bw = gray > threshold ? 255 : 0;
+          const v = this.invertColors ? 255 - bw : bw;
           data[idx] = v;
           data[idx + 1] = v;
           data[idx + 2] = v;
@@ -463,7 +517,8 @@ var DitherModal = class extends import_obsidian.Modal {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const idx = (y * width + x) * 4;
-        const v = buffer[y * width + x] > 127 ? 255 : 0;
+        const bw = buffer[y * width + x] > 127 ? 255 : 0;
+        const v = this.invertColors ? 255 - bw : bw;
         data[idx] = v;
         data[idx + 1] = v;
         data[idx + 2] = v;
@@ -495,9 +550,11 @@ var DitherModal = class extends import_obsidian.Modal {
       }
       const arrayBuffer = await blobToSave.arrayBuffer();
       const extension = useOriginal ? getExtension(this.file.type) : "png";
-      const fileName = `dither-${Date.now()}.${extension}`;
+      const baseName = useOriginal ? sanitizeFileBaseName(stripExtension(this.file.name)) : this.getDitherBaseName();
+      const fileName = `${baseName}.${extension}`;
       const folderPath = getAttachmentFolder(this.app, sourceFile);
-      const filePath = folderPath ? `${folderPath}/${fileName}` : fileName;
+      const targetPath = folderPath ? `${folderPath}/${fileName}` : fileName;
+      const filePath = getUniquePath(this.app, targetPath);
       const created = await this.app.vault.createBinary(filePath, arrayBuffer);
       const link = this.app.fileManager.generateMarkdownLink(
         created,
@@ -510,6 +567,15 @@ var DitherModal = class extends import_obsidian.Modal {
       console.error(err);
       new import_obsidian.Notice("Failed to save dithered image.");
     }
+  }
+  getDitherBaseName() {
+    var _a, _b, _c;
+    const fromInput = (_c = (_b = (_a = this.ditherNameInput) == null ? void 0 : _a.value) == null ? void 0 : _b.trim()) != null ? _c : "";
+    const safe = sanitizeFileBaseName(fromInput || this.ditherNameBase || "dithered-image");
+    if (this.ditherNameInput) {
+      this.ditherNameInput.value = safe;
+    }
+    return safe;
   }
 };
 function toGray(r, g, b) {
@@ -575,6 +641,27 @@ function getAttachmentFolder(app, sourceFile) {
     return base ? `${base}/${rel}` : rel;
   }
   return configValue;
+}
+function stripExtension(fileName) {
+  const idx = fileName.lastIndexOf(".");
+  if (idx <= 0) return fileName;
+  return fileName.slice(0, idx);
+}
+function sanitizeFileBaseName(name) {
+  const cleaned = name.replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim().replace(/\.+$/g, "");
+  return cleaned || "image";
+}
+function getUniquePath(app, initialPath) {
+  const idx = initialPath.lastIndexOf(".");
+  const ext = idx >= 0 ? initialPath.slice(idx) : "";
+  const base = idx >= 0 ? initialPath.slice(0, idx) : initialPath;
+  let attempt = initialPath;
+  let counter = 1;
+  while (app.vault.getAbstractFileByPath(attempt)) {
+    attempt = `${base}-${counter}${ext}`;
+    counter++;
+  }
+  return attempt;
 }
 function blockEvent(evt) {
   evt.preventDefault();

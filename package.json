@@ -5,7 +5,9 @@
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "node esbuild.config.mjs production"
+    "build": "node esbuild.config.mjs production",
+    "version": "node version-bump.mjs && git tag -a $npm_package_version -m $npm_package_version",
+    "cp": "cp manifest.json main.js styles.css ~/Desktop/"
   },
   "keywords": [
     "obsidian",

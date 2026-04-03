@@ -29,10 +29,10 @@ const PRESETS: Preset[] = [
   },
   {
     name: "Small",
-    algorithm: "ordered",
+    algorithm: "floyd-steinberg",
     threshold: 128,
     spread: 20,
-    resizePercent: 60,
+    resizePercent: 30,
   },
   {
     name: "Sharp",
@@ -59,12 +59,18 @@ export default class ImageDitherPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
 
-    this.ribbonIconEl = this.addRibbonIcon("image", "Toggle Image Dither", () => {
-      this.settings.enabled = !this.settings.enabled;
-      void this.saveSettings();
-      this.updateRibbonState();
-      new Notice(`Image Dither ${this.settings.enabled ? "enabled" : "disabled"}`);
-    });
+    this.ribbonIconEl = this.addRibbonIcon(
+      "image",
+      "Toggle Image Dither",
+      () => {
+        this.settings.enabled = !this.settings.enabled;
+        void this.saveSettings();
+        this.updateRibbonState();
+        new Notice(
+          `Image Dither ${this.settings.enabled ? "enabled" : "disabled"}`,
+        );
+      },
+    );
     this.updateRibbonState();
 
     this.registerEvent(
@@ -167,9 +173,13 @@ class DitherModal extends Modal {
   private previewAfterImg?: HTMLImageElement;
   private previewBeforeInfo?: HTMLDivElement;
   private previewAfterInfo?: HTMLDivElement;
+  private previewBeforeName?: HTMLDivElement;
   private previewSavings?: HTMLDivElement;
   private useDitheredBtn?: HTMLButtonElement;
   private useOriginalBtn?: HTMLButtonElement;
+  private ditherNameInput?: HTMLInputElement;
+  private ditherNameBase = "";
+  private resizeValueEl?: HTMLDivElement;
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
 
@@ -177,6 +187,7 @@ class DitherModal extends Modal {
   private threshold = 128;
   private spread = 30;
   private resizePercent = 100;
+  private invertColors = false;
   private originalImage?: HTMLImageElement;
   private originalBytes = 0;
   private originalPreviewUrl: string | null = null;
@@ -219,6 +230,7 @@ class DitherModal extends Modal {
     this.previewBeforeInfo = beforeCard.createDiv({
       cls: "dither-preview-meta",
     });
+    this.previewBeforeName = beforeCard.createDiv({ cls: "dither-preview-name" });
 
     const afterCard = previewGrid.createDiv({ cls: "dither-preview-card" });
     afterCard.createDiv({ cls: "dither-preview-label", text: "Dithered" });
@@ -227,10 +239,20 @@ class DitherModal extends Modal {
       attr: { alt: "Dithered preview" },
     });
     this.previewAfterInfo = afterCard.createDiv({ cls: "dither-preview-meta" });
+    const afterNameRow = afterCard.createDiv({ cls: "dither-filename-row" });
+    this.ditherNameInput = afterNameRow.createEl("input", {
+      cls: "dither-filename-input",
+      attr: { type: "text", spellcheck: "false", placeholder: "filename" },
+    });
+    afterNameRow.createDiv({ cls: "dither-filename-ext", text: ".png" });
+    this.ditherNameBase = `${stripExtension(this.file.name)}-dither`;
+    this.ditherNameInput.value = sanitizeFileBaseName(this.ditherNameBase);
 
     this.previewSavings = previewCol.createDiv({ cls: "dither-savings" });
 
-    const controlsWrap = this.contentEl.createDiv({ cls: "dither-controls-wrap" });
+    const controlsWrap = this.contentEl.createDiv({
+      cls: "dither-controls-wrap",
+    });
     controlsWrap.style.width = "100%";
     const controls = controlsWrap.createDiv();
     controls.addClass("dither-controls");
@@ -287,6 +309,8 @@ class DitherModal extends Modal {
       cls: "dither-value",
       text: `${this.resizePercent}%`,
     });
+    this.resizeValueEl = resizeValue;
+    this.updateResizeValueLabel();
 
     const presetRow = controls.createDiv({ cls: "dither-row" });
     presetRow.createEl("label", { text: "Preset" });
@@ -303,10 +327,18 @@ class DitherModal extends Modal {
     );
     presetSelect.value = "";
 
+    const invertRow = controls.createDiv({ cls: "dither-row" });
+    invertRow.createEl("label", { text: "Invert colors" });
+    const invertToggle = invertRow.createEl("input", {
+      attr: { type: "checkbox" },
+    });
+    invertToggle.checked = this.invertColors;
+    invertRow.createDiv({ cls: "dither-value", text: "" });
+
     const actions = controls.createDiv({ cls: "dither-actions" });
     const cancelBtn = actions.createEl("button", { text: "Cancel" });
     const useOriginalBtn = actions.createEl("button", {
-      text: "Use original image",
+      text: "Use original",
     });
     const saveBtn = actions.createEl("button", { text: "Use dithered" });
     saveBtn.addClass("mod-cta");
@@ -335,7 +367,13 @@ class DitherModal extends Modal {
 
     resizeInput.addEventListener("input", () => {
       this.resizePercent = Number(resizeInput.value);
-      resizeValue.setText(`${this.resizePercent}%`);
+      this.updateResizeValueLabel();
+      presetSelect.value = "";
+      this.queuePreviewUpdate();
+    });
+
+    invertToggle.addEventListener("change", () => {
+      this.invertColors = invertToggle.checked;
       presetSelect.value = "";
       this.queuePreviewUpdate();
     });
@@ -354,7 +392,7 @@ class DitherModal extends Modal {
       resizeInput.value = String(this.resizePercent);
       thresholdValue.setText(String(this.threshold));
       spreadValue.setText(`${this.spread}%`);
-      resizeValue.setText(`${this.resizePercent}%`);
+      this.updateResizeValueLabel();
 
       this.queuePreviewUpdate();
     });
@@ -377,9 +415,12 @@ class DitherModal extends Modal {
 
   private async loadOriginal() {
     this.originalBytes = this.file.size;
+    if (this.previewBeforeName) {
+      this.previewBeforeName.setText(this.file.name);
+    }
     if (this.useOriginalBtn) {
       this.useOriginalBtn.setText(
-        `Use original image (${formatBytes(this.originalBytes)})`,
+        `Use original (${formatBytes(this.originalBytes)})`,
       );
     }
     if (this.useDitheredBtn) {
@@ -392,6 +433,7 @@ class DitherModal extends Modal {
     const img = new Image();
     img.onload = () => {
       this.originalImage = img;
+      this.updateResizeValueLabel();
       this.queuePreviewUpdate(true);
     };
     img.src = this.originalPreviewUrl;
@@ -452,15 +494,19 @@ class DitherModal extends Modal {
         ) / 10
       : 0;
     const largerBy = blob.size - this.originalBytes;
-    const isDanger = savedPercent >= 100 || savedPercent < 0;
-    const isWarn = savedPercent >= 90 && savedPercent < 100;
+    const isDanger = savedPercent <= 0;
+    const isWarn = savedPercent > 0 && savedPercent <= 10;
 
-    this.previewBeforeInfo.setText(`Size: ${formatBytes(this.originalBytes)}`);
-    this.previewAfterInfo.setText(`Size: ${formatBytes(blob.size)}`);
+    this.previewBeforeInfo.setText(
+      `${formatBytes(this.originalBytes)}\n${this.originalImage.naturalWidth} x ${this.originalImage.naturalHeight} px`,
+    );
+    this.previewAfterInfo.setText(
+      `${formatBytes(blob.size)}\n${width} x ${height} px`,
+    );
     this.previewSavings.setText(
       isDanger
         ? `Saved: ${savedPercent}% (larger by ${formatBytes(Math.max(0, largerBy))})`
-        : `Saved: ${savedPercent}% (${formatBytes(savedBytes)})`,
+        : `Saved: ${savedPercent}% (-${formatBytes(savedBytes)})`,
     );
     this.previewSavings.toggleClass("is-danger", isDanger);
     this.previewSavings.toggleClass("is-warn", isWarn);
@@ -473,8 +519,8 @@ class DitherModal extends Modal {
 
     if (this.useDitheredBtn) {
       const label = isDanger
-        ? `Use dithered (+${Math.abs(savedPercent)}%, ${formatBytes(blob.size)})`
-        : `Use dithered (-${savedPercent}%, ${formatBytes(blob.size)})`;
+        ? `Use dithered (${formatBytes(blob.size)}, +${Math.abs(savedPercent)}%)`
+        : `Use dithered (${formatBytes(blob.size)}, -${savedPercent}%)`;
       this.useDitheredBtn.setText(label);
     }
   }
@@ -487,6 +533,11 @@ class DitherModal extends Modal {
     return { width: targetWidth, height: targetHeight };
   }
 
+  private updateResizeValueLabel() {
+    if (!this.resizeValueEl) return;
+    this.resizeValueEl.setText(`${this.resizePercent}%`);
+  }
+
   private applyDither(imageData: ImageData) {
     const data = imageData.data;
     const width = imageData.width;
@@ -495,7 +546,11 @@ class DitherModal extends Modal {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const idx = (y * width + x) * 4;
-        grayBase[y * width + x] = toGray(data[idx], data[idx + 1], data[idx + 2]);
+        grayBase[y * width + x] = toGray(
+          data[idx],
+          data[idx + 1],
+          data[idx + 2],
+        );
       }
     }
     applySharpness(grayBase, width, height, this.spread / 100);
@@ -503,7 +558,8 @@ class DitherModal extends Modal {
     if (this.algorithm === "none") {
       for (let i = 0; i < data.length; i += 4) {
         const gray = grayBase[i / 4];
-        const v = gray > this.threshold ? 255 : 0;
+        const bw = gray > this.threshold ? 255 : 0;
+        const v = this.invertColors ? 255 - bw : bw;
         data[i] = v;
         data[i + 1] = v;
         data[i + 2] = v;
@@ -514,7 +570,8 @@ class DitherModal extends Modal {
     if (this.algorithm === "threshold") {
       for (let i = 0; i < data.length; i += 4) {
         const gray = grayBase[i / 4];
-        const v = gray > this.threshold ? 255 : 0;
+        const bw = gray > this.threshold ? 255 : 0;
+        const v = this.invertColors ? 255 - bw : bw;
         data[i] = v;
         data[i + 1] = v;
         data[i + 2] = v;
@@ -535,7 +592,8 @@ class DitherModal extends Modal {
           const idx = (y * width + x) * 4;
           const gray = grayBase[y * width + x];
           const threshold = (bayer[y % 4][x % 4] / scale) * 255;
-          const v = gray > threshold ? 255 : 0;
+          const bw = gray > threshold ? 255 : 0;
+          const v = this.invertColors ? 255 - bw : bw;
           data[idx] = v;
           data[idx + 1] = v;
           data[idx + 2] = v;
@@ -567,7 +625,8 @@ class DitherModal extends Modal {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const idx = (y * width + x) * 4;
-        const v = buffer[y * width + x] > 127 ? 255 : 0;
+        const bw = buffer[y * width + x] > 127 ? 255 : 0;
+        const v = this.invertColors ? 255 - bw : bw;
         data[idx] = v;
         data[idx + 1] = v;
         data[idx + 2] = v;
@@ -603,9 +662,13 @@ class DitherModal extends Modal {
 
       const arrayBuffer = await blobToSave.arrayBuffer();
       const extension = useOriginal ? getExtension(this.file.type) : "png";
-      const fileName = `dither-${Date.now()}.${extension}`;
+      const baseName = useOriginal
+        ? sanitizeFileBaseName(stripExtension(this.file.name))
+        : this.getDitherBaseName();
+      const fileName = `${baseName}.${extension}`;
       const folderPath = getAttachmentFolder(this.app, sourceFile);
-      const filePath = folderPath ? `${folderPath}/${fileName}` : fileName;
+      const targetPath = folderPath ? `${folderPath}/${fileName}` : fileName;
+      const filePath = getUniquePath(this.app, targetPath);
 
       const created = await this.app.vault.createBinary(filePath, arrayBuffer);
       const link = this.app.fileManager.generateMarkdownLink(
@@ -620,6 +683,15 @@ class DitherModal extends Modal {
       console.error(err);
       new Notice("Failed to save dithered image.");
     }
+  }
+
+  private getDitherBaseName() {
+    const fromInput = this.ditherNameInput?.value?.trim() ?? "";
+    const safe = sanitizeFileBaseName(fromInput || this.ditherNameBase || "dithered-image");
+    if (this.ditherNameInput) {
+      this.ditherNameInput.value = safe;
+    }
+    return safe;
   }
 }
 
@@ -701,6 +773,34 @@ function getAttachmentFolder(app: App, sourceFile: TFile) {
   }
 
   return configValue;
+}
+
+function stripExtension(fileName: string) {
+  const idx = fileName.lastIndexOf(".");
+  if (idx <= 0) return fileName;
+  return fileName.slice(0, idx);
+}
+
+function sanitizeFileBaseName(name: string) {
+  const cleaned = name
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\.+$/g, "");
+  return cleaned || "image";
+}
+
+function getUniquePath(app: App, initialPath: string) {
+  const idx = initialPath.lastIndexOf(".");
+  const ext = idx >= 0 ? initialPath.slice(idx) : "";
+  const base = idx >= 0 ? initialPath.slice(0, idx) : initialPath;
+  let attempt = initialPath;
+  let counter = 1;
+  while (app.vault.getAbstractFileByPath(attempt)) {
+    attempt = `${base}-${counter}${ext}`;
+    counter++;
+  }
+  return attempt;
 }
 
 function blockEvent(evt: Event) {

@@ -79,6 +79,29 @@
 .dither-modal-container .dither-preview-meta {
   font-size: 12px;
   color: var(--text-muted);
+  white-space: pre-line;
+}
+
+.dither-modal-container .dither-preview-name {
+  font-size: 12px;
+  color: var(--text-faint);
+  word-break: break-all;
+}
+
+.dither-modal-container .dither-filename-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.dither-modal-container .dither-filename-input {
+  width: 100%;
+}
+
+.dither-modal-container .dither-filename-ext {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .dither-modal-container .dither-controls {
@@ -121,6 +144,8 @@
 .dither-modal-container .dither-savings {
   font-size: 12px;
   color: var(--text-muted);
+  text-align: right;
+  width: 100%;
 }
 
 .dither-modal-container .dither-savings.is-danger {
