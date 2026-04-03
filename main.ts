@@ -6,7 +6,8 @@ import {
   Modal,
   Notice,
   Plugin,
-  TFile,
+  PluginSettingTab,
+  Setting,
 } from "obsidian";
 
 type DitherAlgorithm = "none" | "threshold" | "ordered" | "floyd-steinberg";
@@ -45,19 +46,26 @@ const PRESETS: Preset[] = [
 
 type ImageDitherSettings = {
   enabled: boolean;
+  totalBytesSaved: number;
+  ditherFilenameTemplate: string;
 };
 
 const DEFAULT_SETTINGS: ImageDitherSettings = {
   enabled: true,
+  totalBytesSaved: 0,
+  ditherFilenameTemplate: "{original}-dither",
 };
 
 export default class ImageDitherPlugin extends Plugin {
   private modalOpen = false;
   private settings: ImageDitherSettings = DEFAULT_SETTINGS;
   private ribbonIconEl: HTMLElement | null = null;
+  private settingsTab?: ImageDitherSettingTab;
 
   async onload() {
     await this.loadSettings();
+    this.settingsTab = new ImageDitherSettingTab(this.app, this);
+    this.addSettingTab(this.settingsTab);
 
     this.ribbonIconEl = this.addRibbonIcon(
       "image",
@@ -129,6 +137,25 @@ export default class ImageDitherPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
+  public getTotalBytesSaved() {
+    return this.settings.totalBytesSaved;
+  }
+
+  public getDitherFilenameTemplate() {
+    return this.settings.ditherFilenameTemplate;
+  }
+
+  public async setDitherFilenameTemplate(template: string) {
+    this.settings.ditherFilenameTemplate = template.trim() || "{original}-dither";
+    await this.saveSettings();
+  }
+
+  public async addToBytesSaved(bytes: number) {
+    this.settings.totalBytesSaved += Math.max(0, Math.round(bytes));
+    await this.saveSettings();
+    this.settingsTab?.refresh();
+  }
+
   private updateRibbonState() {
     if (!this.ribbonIconEl) return;
     this.ribbonIconEl.toggleClass("is-disabled", !this.settings.enabled);
@@ -157,10 +184,64 @@ export default class ImageDitherPlugin extends Plugin {
 
   private openDitherModal(file: File, view: MarkdownView) {
     this.modalOpen = true;
-    const modal = new DitherModal(this.app, file, view, () => {
-      this.modalOpen = false;
-    });
+    const modal = new DitherModal(
+      this.app,
+      file,
+      view,
+      () => {
+        this.modalOpen = false;
+      },
+      async (savedBytes: number) => {
+        await this.addToBytesSaved(savedBytes);
+      },
+      this.getDitherFilenameTemplate(),
+    );
     modal.open();
+  }
+}
+
+class ImageDitherSettingTab extends PluginSettingTab {
+  private plugin: ImageDitherPlugin;
+
+  constructor(app: App, plugin: ImageDitherPlugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+
+  display(): void {
+    const { containerEl } = this;
+    containerEl.empty();
+    containerEl.createEl("h2", { text: "Image Dither" });
+    this.renderFilenameTemplateSetting(containerEl);
+    this.renderStats(containerEl);
+  }
+
+  refresh() {
+    this.display();
+  }
+
+  private renderStats(containerEl: HTMLElement) {
+    new Setting(containerEl)
+      .setName("All-time accumulated bytes saved")
+      .setDesc(
+        `Total savings from all successful 'Use dithered' actions: ${formatBytes(this.plugin.getTotalBytesSaved())}`,
+      );
+  }
+
+  private renderFilenameTemplateSetting(containerEl: HTMLElement) {
+    new Setting(containerEl)
+      .setName("Dithered filename template")
+      .setDesc(
+        "Controls default dithered filename. Tokens: {original}, {algo}, {resize}, {timestamp}",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("{original}-dither")
+          .setValue(this.plugin.getDitherFilenameTemplate())
+          .onChange(async (value) => {
+            await this.plugin.setDitherFilenameTemplate(value);
+          }),
+      );
   }
 }
 
@@ -168,6 +249,8 @@ class DitherModal extends Modal {
   private file: File;
   private view: MarkdownView;
   private onCloseCallback: () => void;
+  private onDitherSaved: (savedBytes: number) => Promise<void>;
+  private filenameTemplate: string;
 
   private previewBeforeImg?: HTMLImageElement;
   private previewAfterImg?: HTMLImageElement;
@@ -195,11 +278,20 @@ class DitherModal extends Modal {
   private latestPreviewBlob?: Blob;
   private previewUpdateTimer: number | null = null;
 
-  constructor(app: App, file: File, view: MarkdownView, onClose: () => void) {
+  constructor(
+    app: App,
+    file: File,
+    view: MarkdownView,
+    onClose: () => void,
+    onDitherSaved: (savedBytes: number) => Promise<void>,
+    filenameTemplate: string,
+  ) {
     super(app);
     this.file = file;
     this.view = view;
     this.onCloseCallback = onClose;
+    this.onDitherSaved = onDitherSaved;
+    this.filenameTemplate = filenameTemplate;
 
     this.canvas = document.createElement("canvas");
     const ctx = this.canvas.getContext("2d", { willReadFrequently: true });
@@ -245,8 +337,7 @@ class DitherModal extends Modal {
       attr: { type: "text", spellcheck: "false", placeholder: "filename" },
     });
     afterNameRow.createDiv({ cls: "dither-filename-ext", text: ".png" });
-    this.ditherNameBase = `${stripExtension(this.file.name)}-dither`;
-    this.ditherNameInput.value = sanitizeFileBaseName(this.ditherNameBase);
+    void this.applyTemplateDefaultDitherName();
 
     this.previewSavings = previewCol.createDiv({ cls: "dither-savings" });
 
@@ -503,19 +594,17 @@ class DitherModal extends Modal {
     this.previewAfterInfo.setText(
       `${formatBytes(blob.size)}\n${width} x ${height} px`,
     );
-    this.previewSavings.setText(
-      isDanger
+    this.previewSavings.empty();
+    this.previewSavings.createSpan({
+      cls: "dither-size-flow-inline",
+      text: `${formatBytes(this.originalBytes)} → ${formatBytes(blob.size)}`,
+    });
+    this.previewSavings.createSpan({
+      cls: `dither-savings-value ${isDanger ? "is-danger" : isWarn ? "is-warn" : "is-good"}`,
+      text: isDanger
         ? `Saved: ${savedPercent}% (larger by ${formatBytes(Math.max(0, largerBy))})`
         : `Saved: ${savedPercent}% (-${formatBytes(savedBytes)})`,
-    );
-    this.previewSavings.toggleClass("is-danger", isDanger);
-    this.previewSavings.toggleClass("is-warn", isWarn);
-    this.previewSavings.toggleClass("is-good", !isDanger && !isWarn);
-    this.previewSavings.style.color = isDanger
-      ? "var(--text-error)"
-      : isWarn
-        ? "var(--text-warning, #d9a620)"
-        : "var(--text-success, #4caf50)";
+    });
 
     if (this.useDitheredBtn) {
       const label = isDanger
@@ -666,9 +755,11 @@ class DitherModal extends Modal {
         ? sanitizeFileBaseName(stripExtension(this.file.name))
         : this.getDitherBaseName();
       const fileName = `${baseName}.${extension}`;
-      const folderPath = getAttachmentFolder(this.app, sourceFile);
-      const targetPath = folderPath ? `${folderPath}/${fileName}` : fileName;
-      const filePath = getUniquePath(this.app, targetPath);
+      const filePath = await getHyphenIncrementedAttachmentPath(
+        this.app,
+        fileName,
+        sourceFile.path,
+      );
 
       const created = await this.app.vault.createBinary(filePath, arrayBuffer);
       const link = this.app.fileManager.generateMarkdownLink(
@@ -677,6 +768,11 @@ class DitherModal extends Modal {
       );
       const embed = link.startsWith("!") ? link : `!${link}`;
       editor.replaceRange(embed, editor.getCursor());
+
+      if (!useOriginal) {
+        const bytesSaved = this.originalBytes - blobToSave.size;
+        await this.onDitherSaved(bytesSaved);
+      }
 
       this.close();
     } catch (err) {
@@ -692,6 +788,47 @@ class DitherModal extends Modal {
       this.ditherNameInput.value = safe;
     }
     return safe;
+  }
+
+  private getDefaultDitherBaseName() {
+    const originalBase = sanitizeFileBaseName(stripExtension(this.file.name));
+    const template = this.filenameTemplate?.trim() || "{original}-dither";
+    const rendered = template
+      .replaceAll("{original}", originalBase)
+      .replaceAll("{algo}", this.algorithm)
+      .replaceAll("{resize}", String(this.resizePercent))
+      .replaceAll("{timestamp}", compactTimestamp(new Date()));
+    return sanitizeFileBaseName(rendered);
+  }
+
+  private async applyTemplateDefaultDitherName() {
+    // Step 1: render base from template from settings.
+    const templatedBase = this.getDefaultDitherBaseName();
+    // Step 2: resolve unique candidate in target folder.
+    const uniqueBase = await this.getUniqueBaseForCurrentFolder(
+      templatedBase,
+      "png",
+    );
+    this.ditherNameBase = uniqueBase;
+    if (this.ditherNameInput) {
+      this.ditherNameInput.value = uniqueBase;
+    }
+  }
+
+  private async getUniqueBaseForCurrentFolder(
+    baseName: string,
+    extension: string,
+  ) {
+    const sourceFile = this.view.file ?? this.app.workspace.getActiveFile();
+    if (!sourceFile) return sanitizeFileBaseName(baseName);
+    const candidate = `${sanitizeFileBaseName(baseName)}.${extension}`;
+    const uniquePath = await getHyphenIncrementedAttachmentPath(
+      this.app,
+      candidate,
+      sourceFile.path,
+    );
+    const fileName = uniquePath.split("/").pop() ?? `${baseName}.${extension}`;
+    return sanitizeFileBaseName(stripExtension(fileName));
   }
 }
 
@@ -755,26 +892,6 @@ function getExtension(mime: string) {
   return map[mime] ?? "png";
 }
 
-function getAttachmentFolder(app: App, sourceFile: TFile) {
-  const vault = app.vault as any;
-  const configValue =
-    typeof vault.getConfig === "function"
-      ? vault.getConfig("attachmentFolderPath")
-      : "";
-
-  if (!configValue || configValue.trim() === "") {
-    return sourceFile.parent?.path ?? "";
-  }
-
-  if (configValue.startsWith("./")) {
-    const base = sourceFile.parent?.path ?? "";
-    const rel = configValue.replace("./", "");
-    return base ? `${base}/${rel}` : rel;
-  }
-
-  return configValue;
-}
-
 function stripExtension(fileName: string) {
   const idx = fileName.lastIndexOf(".");
   if (idx <= 0) return fileName;
@@ -790,22 +907,45 @@ function sanitizeFileBaseName(name: string) {
   return cleaned || "image";
 }
 
-function getUniquePath(app: App, initialPath: string) {
-  const idx = initialPath.lastIndexOf(".");
-  const ext = idx >= 0 ? initialPath.slice(idx) : "";
-  const base = idx >= 0 ? initialPath.slice(0, idx) : initialPath;
-  let attempt = initialPath;
-  let counter = 1;
-  while (app.vault.getAbstractFileByPath(attempt)) {
-    attempt = `${base}-${counter}${ext}`;
-    counter++;
-  }
-  return attempt;
-}
-
 function blockEvent(evt: Event) {
   evt.preventDefault();
   evt.stopPropagation();
   evt.stopImmediatePropagation();
   (evt as unknown as { returnValue?: boolean }).returnValue = false;
+}
+
+async function getHyphenIncrementedAttachmentPath(
+  app: App,
+  filename: string,
+  sourcePath: string,
+) {
+  const attachmentProbe = await app.fileManager.getAvailablePathForAttachment(
+    "__image_dither_probe__.tmp",
+    sourcePath,
+  );
+  const slash = attachmentProbe.lastIndexOf("/");
+  const folder = slash >= 0 ? attachmentProbe.slice(0, slash) : "";
+
+  const dot = filename.lastIndexOf(".");
+  const ext = dot >= 0 ? filename.slice(dot) : "";
+  const base = dot >= 0 ? filename.slice(0, dot) : filename;
+
+  let attempt = folder ? `${folder}/${filename}` : filename;
+  let counter = 1;
+  while (app.vault.getAbstractFileByPath(attempt)) {
+    const nextName = `${base}-${counter}${ext}`;
+    attempt = folder ? `${folder}/${nextName}` : nextName;
+    counter++;
+  }
+  return attempt;
+}
+
+function compactTimestamp(date: Date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  return `${yyyy}${mm}${dd}-${hh}${min}${ss}`;
 }

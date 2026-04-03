@@ -1,10 +1,20 @@
+.dither-modal-overlay {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px !important;
+  box-sizing: border-box !important;
+}
+
 .dither-modal-container {
   width: min(94vw, 980px) !important;
   max-width: 980px !important;
-  margin: 0 auto !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
+  margin: 0 !important;
+  left: auto !important;
+  top: auto !important;
+  transform: none !important;
   position: relative !important;
+  max-height: calc(100vh - 48px) !important;
 }
 
 .dither-modal-container .modal-content {
@@ -13,6 +23,8 @@
   margin: 0 !important;
   padding: 16px !important;
   box-sizing: border-box !important;
+  max-height: calc(100vh - 64px) !important;
+  overflow: auto !important;
 }
 
 .dither-modal-container .modal-title {
@@ -143,20 +155,27 @@
 
 .dither-modal-container .dither-savings {
   font-size: 12px;
-  color: var(--text-muted);
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 8px;
   text-align: right;
   width: 100%;
 }
 
-.dither-modal-container .dither-savings.is-danger {
+.dither-modal-container .dither-size-flow-inline {
+  color: var(--text-muted);
+}
+
+.dither-modal-container .dither-savings-value.is-danger {
   color: var(--text-error);
 }
 
-.dither-modal-container .dither-savings.is-warn {
+.dither-modal-container .dither-savings-value.is-warn {
   color: var(--text-warning, #d9a620);
 }
 
-.dither-modal-container .dither-savings.is-good {
+.dither-modal-container .dither-savings-value.is-good {
   color: var(--text-success, #4caf50);
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "obsidian-plugin-image-dither",
   "version": "1.0.0",
-  "description": "Obsidian plugin to dither pasted/dropped images.",
+  "description": "Paste or drop images and dither them to black & white with live preview, saving storage space.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
