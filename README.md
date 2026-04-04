@@ -4,7 +4,8 @@ Intercepts images pasted or dropped into a note and lets you dither and resize t
 
 Adjust the settings, then choose to save the dithered version or fall back to the original
 
-<img width="991" height="816" alt="image" src="https://github.com/user-attachments/assets/76dc6833-cced-415a-a621-5f64d30069fa" />
+![dith-1](https://github.com/user-attachments/assets/6e9f7146-7124-4ac9-9519-023a4d50e9c0)
+
 
 ## Features
 
@@ -42,6 +43,8 @@ The alpha channel is never modified. Transparent PNGs remain transparent after d
 - Percentage saved with color-coded indicator (good / warn / danger)
 - Running total of bytes saved across all uses, shown in Settings
 
+<img width="378" height="97" alt="image" src="https://github.com/user-attachments/assets/d6191b42-63c2-4467-a2ac-4ecb736d8917" />
+
 ### Output filename
 
 The dithered filename is pre-filled in the modal using a configurable template and can be edited before saving. Supported tokens:
@@ -74,3 +77,8 @@ The ribbon icon also toggles the plugin on/off.
 ## Output format
 
 Images are always saved as **PNG** to the attachment location in specified in your Obsidian preferences > Files and links.
+
+## More examples
+![dither-demo1](https://github.com/user-attachments/assets/eb5be8ee-c028-4cf1-b581-482027eb7340)
+
+
