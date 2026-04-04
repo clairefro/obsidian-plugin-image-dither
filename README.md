@@ -93,3 +93,17 @@ Images are always saved as **PNG** to the attachment location in specified in yo
 ![dither-demo1](https://github.com/user-attachments/assets/eb5be8ee-c028-4cf1-b581-482027eb7340)
 
 
+<img width="658" height="438" alt="image" src="https://github.com/user-attachments/assets/b5a6912b-9698-4c7a-9324-e602ba576d6e" />
+
+<img width="697" height="509" alt="image" src="https://github.com/user-attachments/assets/a069f082-0d0d-4766-a7ed-76789b321ead" />
+
+<img width="696" height="314" alt="image" src="https://github.com/user-attachments/assets/208da55e-507d-4d43-a28b-1328ed74d610" />
+
+<img width="689" height="691" alt="image" src="https://github.com/user-attachments/assets/b6f5dc8b-bdf1-43df-814b-8fa391dabdc2" />
+
+<img width="500" height="413" alt="image" src="https://github.com/user-attachments/assets/27d2fa95-d4c9-46c4-b36f-857e3b5a4c6a" />
+
+
+
+
+
