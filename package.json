@@ -1,5 +1,6 @@
 {
   "name": "obsidian-plugin-image-dither",
+  "type": "module",
   "version": "1.0.0",
   "description": "Paste or drop images and dither them to black & white with live preview, saving storage space.",
   "main": "main.js",
@@ -7,7 +8,8 @@
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production",
     "version": "node version-bump.mjs && git tag -a $npm_package_version -m $npm_package_version",
-    "cp": "cp manifest.json main.js styles.css ~/Desktop/"
+    "cp": "cp manifest.json main.js styles.css ~/Desktop/",
+    "lint": "eslint main.ts"
   },
   "keywords": [
     "obsidian",
@@ -20,6 +22,8 @@
   "devDependencies": {
     "@types/node": "^20.11.30",
     "esbuild": "^0.21.5",
+    "eslint": "^10.2.0",
+    "eslint-plugin-obsidianmd": "^0.1.9",
     "obsidian": "^1.5.12",
     "typescript": "^5.4.5"
   }

@@ -132,6 +132,10 @@
   align-items: center;
 }
 
+.dither-modal-container .dither-row-preset {
+  order: -10;
+}
+
 .dither-modal-container .dither-row input[type="range"],
 .dither-modal-container .dither-row select {
   width: 100%;
@@ -181,6 +185,14 @@
 
 .side-dock-ribbon-action.is-disabled[aria-label^="Image Dither"] {
   opacity: 0.45;
+}
+
+.image-dither-saved-amount {
+  color: var(--text-success, #4caf50);
+}
+
+.image-dither-dynamic-message {
+  color: var(--text-muted);
 }
 
 @media (max-width: 720px) {

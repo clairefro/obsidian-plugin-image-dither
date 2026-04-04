@@ -17,6 +17,8 @@ type Preset = {
   algorithm: DitherAlgorithm;
   threshold: number;
   spread: number;
+  brightness: number;
+  contrast: number;
   resizePercent: number;
 };
 
@@ -26,6 +28,8 @@ const PRESETS: Preset[] = [
     algorithm: "floyd-steinberg",
     threshold: 128,
     spread: 30,
+    brightness: 0,
+    contrast: 0,
     resizePercent: 100,
   },
   {
@@ -33,6 +37,8 @@ const PRESETS: Preset[] = [
     algorithm: "floyd-steinberg",
     threshold: 128,
     spread: 20,
+    brightness: 0,
+    contrast: 0,
     resizePercent: 30,
   },
   {
@@ -40,20 +46,28 @@ const PRESETS: Preset[] = [
     algorithm: "threshold",
     threshold: 140,
     spread: 70,
+    brightness: 0,
+    contrast: 0,
     resizePercent: 100,
   },
 ];
+
+const AUTO_PRESET_OPTION = "__auto_max_compression__";
 
 type ImageDitherSettings = {
   enabled: boolean;
   totalBytesSaved: number;
   ditherFilenameTemplate: string;
+  defaultPresetName: string;
+  defaultResizeWidthPx: number | null;
 };
 
 const DEFAULT_SETTINGS: ImageDitherSettings = {
   enabled: true,
   totalBytesSaved: 0,
   ditherFilenameTemplate: "{original}-dither",
+  defaultPresetName: "Balanced",
+  defaultResizeWidthPx: 700,
 };
 
 export default class ImageDitherPlugin extends Plugin {
@@ -67,19 +81,33 @@ export default class ImageDitherPlugin extends Plugin {
     this.settingsTab = new ImageDitherSettingTab(this.app, this);
     this.addSettingTab(this.settingsTab);
 
-    this.ribbonIconEl = this.addRibbonIcon(
-      "image",
-      "Toggle Image Dither",
-      () => {
-        this.settings.enabled = !this.settings.enabled;
-        void this.saveSettings();
-        this.updateRibbonState();
-        new Notice(
-          `Image Dither ${this.settings.enabled ? "enabled" : "disabled"}`,
-        );
-      },
-    );
+    this.ribbonIconEl = this.addRibbonIcon("image", "Toggle", async () => {
+      await this.setEnabled(!this.settings.enabled);
+      new Notice(
+        `Image dithering on paste/drop ${this.settings.enabled ? "enabled" : "disabled"}`,
+      );
+    });
     this.updateRibbonState();
+
+    this.addCommand({
+      id: "enable",
+      name: "Enable",
+      callback: async () => {
+        await this.setEnabled(true);
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
+        new Notice("Image Dither enabled");
+      },
+    });
+
+    this.addCommand({
+      id: "disable",
+      name: "Disable",
+      callback: async () => {
+        await this.setEnabled(false);
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
+        new Notice("Image Dither disabled");
+      },
+    });
 
     this.registerEvent(
       this.app.workspace.on(
@@ -129,8 +157,14 @@ export default class ImageDitherPlugin extends Plugin {
   onunload() {}
 
   private async loadSettings() {
-    const loaded = await this.loadData();
+    const loaded =
+      (await this.loadData()) as Partial<ImageDitherSettings> | null;
     this.settings = { ...DEFAULT_SETTINGS, ...(loaded ?? {}) };
+    const width = this.settings.defaultResizeWidthPx;
+    this.settings.defaultResizeWidthPx =
+      typeof width === "number" && Number.isFinite(width) && width > 0
+        ? Math.round(width)
+        : null;
   }
 
   private async saveSettings() {
@@ -141,12 +175,48 @@ export default class ImageDitherPlugin extends Plugin {
     return this.settings.totalBytesSaved;
   }
 
+  public isEnabled() {
+    return this.settings.enabled;
+  }
+
+  public async setEnabled(enabled: boolean) {
+    this.settings.enabled = enabled;
+    await this.saveSettings();
+    this.updateRibbonState();
+    this.settingsTab?.refresh();
+  }
+
   public getDitherFilenameTemplate() {
     return this.settings.ditherFilenameTemplate;
   }
 
   public async setDitherFilenameTemplate(template: string) {
-    this.settings.ditherFilenameTemplate = template.trim() || "{original}-dither";
+    this.settings.ditherFilenameTemplate =
+      template.trim() || "{original}-dither";
+    await this.saveSettings();
+  }
+
+  public getDefaultPresetName() {
+    return this.settings.defaultPresetName;
+  }
+
+  public async setDefaultPresetName(name: string) {
+    const valid =
+      name === AUTO_PRESET_OPTION ||
+      PRESETS.some((preset) => preset.name === name)
+        ? name
+        : DEFAULT_SETTINGS.defaultPresetName;
+    this.settings.defaultPresetName = valid;
+    await this.saveSettings();
+  }
+
+  public getDefaultResizeWidthPx() {
+    return this.settings.defaultResizeWidthPx;
+  }
+
+  public async setDefaultResizeWidthPx(value: number | null) {
+    this.settings.defaultResizeWidthPx =
+      value && Number.isFinite(value) && value > 0 ? Math.round(value) : null;
     await this.saveSettings();
   }
 
@@ -195,6 +265,8 @@ export default class ImageDitherPlugin extends Plugin {
         await this.addToBytesSaved(savedBytes);
       },
       this.getDitherFilenameTemplate(),
+      this.getDefaultPresetName(),
+      this.getDefaultResizeWidthPx(),
     );
     modal.open();
   }
@@ -211,8 +283,10 @@ class ImageDitherSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Image Dither" });
+    this.renderEnabledSetting(containerEl);
     this.renderFilenameTemplateSetting(containerEl);
+    this.renderDefaultPresetSetting(containerEl);
+    this.renderDefaultWidthSetting(containerEl);
     this.renderStats(containerEl);
   }
 
@@ -221,11 +295,22 @@ class ImageDitherSettingTab extends PluginSettingTab {
   }
 
   private renderStats(containerEl: HTMLElement) {
-    new Setting(containerEl)
-      .setName("All-time accumulated bytes saved")
-      .setDesc(
-        `Total savings from all successful 'Use dithered' actions: ${formatBytes(this.plugin.getTotalBytesSaved())}`,
-      );
+    const totalBytes = this.plugin.getTotalBytesSaved();
+    const bytesLabel = formatBytes(totalBytes);
+    const dynamicMessage = getSavingsAllegory(totalBytes);
+    const statsSection = containerEl.createDiv({ cls: "image-dither-stats" });
+    const totalLine = statsSection.createEl("p");
+    totalLine.appendText("You've saved ");
+    totalLine.createSpan({
+      cls: "image-dither-saved-amount",
+      text: bytesLabel,
+    });
+    totalLine.appendText(" so far using Image Dither.");
+
+    statsSection.createEl("p", {
+      cls: "image-dither-dynamic-message",
+      text: dynamicMessage,
+    });
   }
 
   private renderFilenameTemplateSetting(containerEl: HTMLElement) {
@@ -238,10 +323,73 @@ class ImageDitherSettingTab extends PluginSettingTab {
         text
           .setPlaceholder("{original}-dither")
           .setValue(this.plugin.getDitherFilenameTemplate())
-          .onChange(async (value) => {
-            await this.plugin.setDitherFilenameTemplate(value);
+          .onChange((value) => {
+            void this.plugin.setDitherFilenameTemplate(value);
           }),
       );
+  }
+
+  private renderEnabledSetting(containerEl: HTMLElement) {
+    new Setting(containerEl)
+      .setName("Enabled")
+      .setDesc("Turn image paste/drop interception on or off.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.isEnabled()).onChange((value) => {
+          void this.plugin.setEnabled(value);
+        }),
+      );
+  }
+
+  private renderDefaultPresetSetting(containerEl: HTMLElement) {
+    new Setting(containerEl)
+      .setName("Default preset")
+      .setDesc(
+        "Preset to apply when opening the dither modal. Auto tries all presets and picks max compression.",
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption(AUTO_PRESET_OPTION, "Auto (max compression)");
+        PRESETS.forEach((preset) => {
+          dropdown.addOption(preset.name, preset.name);
+        });
+        dropdown.setValue(this.plugin.getDefaultPresetName());
+        dropdown.onChange((value) => {
+          void this.plugin.setDefaultPresetName(value);
+        });
+      });
+  }
+
+  private renderDefaultWidthSetting(containerEl: HTMLElement) {
+    new Setting(containerEl)
+      .setName("Default output width (approximate px)")
+      .setDesc(
+        "If set, resize defaults to the closest percentage for each image. Remove to default to original image width",
+      )
+      .addText((text) => {
+        text
+          .setPlaceholder("Optional")
+          .setValue(
+            this.plugin.getDefaultResizeWidthPx() !== null
+              ? String(this.plugin.getDefaultResizeWidthPx())
+              : "",
+          )
+          .onChange((value) => {
+            const parsed = Number(value.trim());
+            if (
+              value.trim() === "" ||
+              !Number.isFinite(parsed) ||
+              parsed <= 0
+            ) {
+              void this.plugin.setDefaultResizeWidthPx(null);
+              return;
+            }
+            void this.plugin.setDefaultResizeWidthPx(parsed);
+          });
+
+        text.inputEl.type = "number";
+        text.inputEl.inputMode = "numeric";
+        text.inputEl.min = "1";
+        text.inputEl.step = "1";
+      });
   }
 }
 
@@ -251,6 +399,8 @@ class DitherModal extends Modal {
   private onCloseCallback: () => void;
   private onDitherSaved: (savedBytes: number) => Promise<void>;
   private filenameTemplate: string;
+  private defaultPresetName: string;
+  private defaultResizeWidthPx: number | null;
 
   private previewBeforeImg?: HTMLImageElement;
   private previewAfterImg?: HTMLImageElement;
@@ -263,12 +413,25 @@ class DitherModal extends Modal {
   private ditherNameInput?: HTMLInputElement;
   private ditherNameBase = "";
   private resizeValueEl?: HTMLDivElement;
+  private algorithmSelectEl?: HTMLSelectElement;
+  private thresholdInputEl?: HTMLInputElement;
+  private thresholdValueEl?: HTMLDivElement;
+  private spreadInputEl?: HTMLInputElement;
+  private spreadValueEl?: HTMLDivElement;
+  private brightnessInputEl?: HTMLInputElement;
+  private brightnessValueEl?: HTMLDivElement;
+  private contrastInputEl?: HTMLInputElement;
+  private contrastValueEl?: HTMLDivElement;
+  private resizeInputEl?: HTMLInputElement;
+  private presetSelectEl?: HTMLSelectElement;
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
 
   private algorithm: DitherAlgorithm = "floyd-steinberg";
   private threshold = 128;
   private spread = 30;
+  private brightness = 0;
+  private contrast = 0;
   private resizePercent = 100;
   private invertColors = false;
   private originalImage?: HTMLImageElement;
@@ -285,6 +448,8 @@ class DitherModal extends Modal {
     onClose: () => void,
     onDitherSaved: (savedBytes: number) => Promise<void>,
     filenameTemplate: string,
+    defaultPresetName: string,
+    defaultResizeWidthPx: number | null,
   ) {
     super(app);
     this.file = file;
@@ -292,6 +457,8 @@ class DitherModal extends Modal {
     this.onCloseCallback = onClose;
     this.onDitherSaved = onDitherSaved;
     this.filenameTemplate = filenameTemplate;
+    this.defaultPresetName = defaultPresetName;
+    this.defaultResizeWidthPx = defaultResizeWidthPx;
 
     this.canvas = document.createElement("canvas");
     const ctx = this.canvas.getContext("2d", { willReadFrequently: true });
@@ -300,15 +467,17 @@ class DitherModal extends Modal {
   }
 
   onOpen() {
+    if (this.defaultPresetName !== AUTO_PRESET_OPTION) {
+      this.applyPresetByName(this.defaultPresetName);
+    } else {
+      this.applyPresetByName(DEFAULT_SETTINGS.defaultPresetName);
+    }
     this.modalEl.addClass("dither-modal-container");
     this.contentEl.addClass("dither-modal");
     if (this.modalEl.parentElement) {
       this.modalEl.parentElement.classList.add("dither-modal-overlay");
     }
     this.titleEl.setText("Dither image before saving");
-    this.contentEl.style.display = "flex";
-    this.contentEl.style.flexDirection = "column";
-    this.contentEl.style.gap = "16px";
 
     const previewCol = this.contentEl.createDiv({ cls: "dither-preview-col" });
     const previewGrid = previewCol.createDiv({ cls: "dither-preview-grid" });
@@ -322,7 +491,9 @@ class DitherModal extends Modal {
     this.previewBeforeInfo = beforeCard.createDiv({
       cls: "dither-preview-meta",
     });
-    this.previewBeforeName = beforeCard.createDiv({ cls: "dither-preview-name" });
+    this.previewBeforeName = beforeCard.createDiv({
+      cls: "dither-preview-name",
+    });
 
     const afterCard = previewGrid.createDiv({ cls: "dither-preview-card" });
     afterCard.createDiv({ cls: "dither-preview-label", text: "Dithered" });
@@ -334,7 +505,7 @@ class DitherModal extends Modal {
     const afterNameRow = afterCard.createDiv({ cls: "dither-filename-row" });
     this.ditherNameInput = afterNameRow.createEl("input", {
       cls: "dither-filename-input",
-      attr: { type: "text", spellcheck: "false", placeholder: "filename" },
+      attr: { type: "text", spellcheck: "false", placeholder: "Filename" },
     });
     afterNameRow.createDiv({ cls: "dither-filename-ext", text: ".png" });
     void this.applyTemplateDefaultDitherName();
@@ -344,7 +515,6 @@ class DitherModal extends Modal {
     const controlsWrap = this.contentEl.createDiv({
       cls: "dither-controls-wrap",
     });
-    controlsWrap.style.width = "100%";
     const controls = controlsWrap.createDiv();
     controls.addClass("dither-controls");
 
@@ -360,6 +530,7 @@ class DitherModal extends Modal {
       algorithmSelect.createEl("option", { value: opt.value, text: opt.label });
     });
     algorithmSelect.value = this.algorithm;
+    this.algorithmSelectEl = algorithmSelect;
 
     const thresholdRow = controls.createDiv({ cls: "dither-row" });
     thresholdRow.createEl("label", { text: "Threshold" });
@@ -375,6 +546,8 @@ class DitherModal extends Modal {
       cls: "dither-value",
       text: String(this.threshold),
     });
+    this.thresholdInputEl = thresholdInput;
+    this.thresholdValueEl = thresholdValue;
 
     const spreadRow = controls.createDiv({ cls: "dither-row" });
     spreadRow.createEl("label", { text: "Sharpness" });
@@ -385,6 +558,42 @@ class DitherModal extends Modal {
       cls: "dither-value",
       text: `${this.spread}%`,
     });
+    this.spreadInputEl = spreadInput;
+    this.spreadValueEl = spreadValue;
+
+    const brightnessRow = controls.createDiv({ cls: "dither-row" });
+    brightnessRow.createEl("label", { text: "Brightness" });
+    const brightnessInput = brightnessRow.createEl("input", {
+      attr: {
+        type: "range",
+        min: "-100",
+        max: "100",
+        value: String(this.brightness),
+      },
+    });
+    const brightnessValue = brightnessRow.createDiv({
+      cls: "dither-value",
+      text: `${this.brightness}%`,
+    });
+    this.brightnessInputEl = brightnessInput;
+    this.brightnessValueEl = brightnessValue;
+
+    const contrastRow = controls.createDiv({ cls: "dither-row" });
+    contrastRow.createEl("label", { text: "Contrast" });
+    const contrastInput = contrastRow.createEl("input", {
+      attr: {
+        type: "range",
+        min: "-100",
+        max: "100",
+        value: String(this.contrast),
+      },
+    });
+    const contrastValue = contrastRow.createDiv({
+      cls: "dither-value",
+      text: `${this.contrast}%`,
+    });
+    this.contrastInputEl = contrastInput;
+    this.contrastValueEl = contrastValue;
 
     const resizeRow = controls.createDiv({ cls: "dither-row" });
     resizeRow.createEl("label", { text: "Resize (%)" });
@@ -400,23 +609,30 @@ class DitherModal extends Modal {
       cls: "dither-value",
       text: `${this.resizePercent}%`,
     });
+    this.resizeInputEl = resizeInput;
     this.resizeValueEl = resizeValue;
     this.updateResizeValueLabel();
 
-    const presetRow = controls.createDiv({ cls: "dither-row" });
+    const presetRow = controls.createDiv({
+      cls: "dither-row dither-row-preset",
+    });
     presetRow.createEl("label", { text: "Preset" });
     const presetSelect = presetRow.createEl("select");
+    presetSelect.createEl("option", {
+      value: AUTO_PRESET_OPTION,
+      text: "Auto (max compression)",
+    });
     PRESETS.forEach((preset) => {
       presetSelect.createEl("option", {
         value: preset.name,
         text: preset.name,
       });
     });
-    presetSelect.insertAdjacentHTML(
-      "afterbegin",
-      `<option value="">Custom</option>`,
-    );
-    presetSelect.value = "";
+    presetSelect.value =
+      this.defaultPresetName === AUTO_PRESET_OPTION
+        ? AUTO_PRESET_OPTION
+        : this.getActivePresetName();
+    this.presetSelectEl = presetSelect;
 
     const invertRow = controls.createDiv({ cls: "dither-row" });
     invertRow.createEl("label", { text: "Invert colors" });
@@ -438,61 +654,70 @@ class DitherModal extends Modal {
 
     algorithmSelect.addEventListener("change", () => {
       this.algorithm = algorithmSelect.value as DitherAlgorithm;
-      presetSelect.value = "";
       this.queuePreviewUpdate();
     });
 
     thresholdInput.addEventListener("input", () => {
       this.threshold = Number(thresholdInput.value);
       thresholdValue.setText(String(this.threshold));
-      presetSelect.value = "";
       this.queuePreviewUpdate();
     });
 
     spreadInput.addEventListener("input", () => {
       this.spread = Number(spreadInput.value);
       spreadValue.setText(`${this.spread}%`);
-      presetSelect.value = "";
+      this.queuePreviewUpdate();
+    });
+
+    brightnessInput.addEventListener("input", () => {
+      this.brightness = Number(brightnessInput.value);
+      brightnessValue.setText(`${this.brightness}%`);
+      this.queuePreviewUpdate();
+    });
+
+    contrastInput.addEventListener("input", () => {
+      this.contrast = Number(contrastInput.value);
+      contrastValue.setText(`${this.contrast}%`);
       this.queuePreviewUpdate();
     });
 
     resizeInput.addEventListener("input", () => {
       this.resizePercent = Number(resizeInput.value);
       this.updateResizeValueLabel();
-      presetSelect.value = "";
       this.queuePreviewUpdate();
     });
 
     invertToggle.addEventListener("change", () => {
       this.invertColors = invertToggle.checked;
-      presetSelect.value = "";
       this.queuePreviewUpdate();
     });
 
     presetSelect.addEventListener("change", () => {
+      if (presetSelect.value === AUTO_PRESET_OPTION) {
+        this.defaultPresetName = AUTO_PRESET_OPTION;
+        void this.applyBestCompressionPreset().then(() => {
+          this.syncControlsFromState();
+          this.queuePreviewUpdate();
+        });
+        return;
+      }
       const preset = PRESETS.find((p) => p.name === presetSelect.value);
       if (!preset) return;
-      this.algorithm = preset.algorithm;
-      this.threshold = preset.threshold;
-      this.spread = preset.spread;
-      this.resizePercent = preset.resizePercent;
-
-      algorithmSelect.value = this.algorithm;
-      thresholdInput.value = String(this.threshold);
-      spreadInput.value = String(this.spread);
-      resizeInput.value = String(this.resizePercent);
-      thresholdValue.setText(String(this.threshold));
-      spreadValue.setText(`${this.spread}%`);
-      this.updateResizeValueLabel();
-
+      this.applyPresetByName(preset.name);
+      this.applyDefaultResizeWidthIfConfigured();
+      this.syncControlsFromState();
       this.queuePreviewUpdate();
     });
 
     cancelBtn.addEventListener("click", () => this.close());
-    useOriginalBtn.addEventListener("click", () => this.saveImage(true));
-    saveBtn.addEventListener("click", () => this.saveImage(false));
+    useOriginalBtn.addEventListener("click", () => {
+      void this.saveImage(true);
+    });
+    saveBtn.addEventListener("click", () => {
+      void this.saveImage(false);
+    });
 
-    this.loadOriginal();
+    void this.loadOriginal();
   }
 
   onClose() {
@@ -522,9 +747,14 @@ class DitherModal extends Modal {
       this.previewBeforeImg.src = this.originalPreviewUrl;
     }
     const img = new Image();
-    img.onload = () => {
+    img.onload = async () => {
       this.originalImage = img;
       this.updateResizeValueLabel();
+      if (this.defaultPresetName === AUTO_PRESET_OPTION) {
+        await this.applyBestCompressionPreset();
+      }
+      this.applyDefaultResizeWidthIfConfigured();
+      this.syncControlsFromState();
       this.queuePreviewUpdate(true);
     };
     img.src = this.originalPreviewUrl;
@@ -536,7 +766,7 @@ class DitherModal extends Modal {
       this.previewUpdateTimer = null;
     }
 
-    const delay = immediate ? 0 : 80;
+    const delay = immediate ? 0 : 50;
     this.previewUpdateTimer = window.setTimeout(() => {
       this.previewUpdateTimer = null;
       void this.updatePreview();
@@ -554,24 +784,9 @@ class DitherModal extends Modal {
       return;
     }
 
-    const { width, height } = this.getTargetSize(
-      this.originalImage.naturalWidth,
-      this.originalImage.naturalHeight,
-    );
-
-    this.canvas.width = width;
-    this.canvas.height = height;
-
-    this.ctx.drawImage(this.originalImage, 0, 0, width, height);
-
-    const imageData = this.ctx.getImageData(0, 0, width, height);
-    this.applyDither(imageData);
-    this.ctx.putImageData(imageData, 0, 0);
-
-    const blob = await new Promise<Blob | null>((resolve) =>
-      this.canvas.toBlob((b) => resolve(b), "image/png"),
-    );
-    if (!blob) return;
+    const rendered = await this.renderProcessedBlob();
+    if (!rendered) return;
+    const { blob, width, height } = rendered;
 
     this.latestPreviewBlob = blob;
     const previewUrl = URL.createObjectURL(blob);
@@ -608,8 +823,8 @@ class DitherModal extends Modal {
 
     if (this.useDitheredBtn) {
       const label = isDanger
-        ? `Use dithered (${formatBytes(blob.size)}, +${Math.abs(savedPercent)}%)`
-        : `Use dithered (${formatBytes(blob.size)}, -${savedPercent}%)`;
+        ? `Use dithered (+${Math.abs(savedPercent)}%, ${formatBytes(blob.size)})`
+        : `Use dithered (-${savedPercent}%, ${formatBytes(blob.size)})`;
       this.useDitheredBtn.setText(label);
     }
   }
@@ -622,9 +837,127 @@ class DitherModal extends Modal {
     return { width: targetWidth, height: targetHeight };
   }
 
+  private applyPresetByName(name: string) {
+    const preset = PRESETS.find((p) => p.name === name);
+    if (!preset) return;
+    this.algorithm = preset.algorithm;
+    this.threshold = preset.threshold;
+    this.spread = preset.spread;
+    this.brightness = preset.brightness;
+    this.contrast = preset.contrast;
+    this.resizePercent = preset.resizePercent;
+  }
+
+  private getActivePresetName() {
+    const match = PRESETS.find(
+      (preset) =>
+        preset.algorithm === this.algorithm &&
+        preset.threshold === this.threshold &&
+        preset.spread === this.spread &&
+        preset.brightness === this.brightness &&
+        preset.contrast === this.contrast &&
+        preset.resizePercent === this.resizePercent,
+    );
+    return match?.name ?? DEFAULT_SETTINGS.defaultPresetName;
+  }
+
+  private syncControlsFromState() {
+    if (this.algorithmSelectEl) this.algorithmSelectEl.value = this.algorithm;
+    if (this.thresholdInputEl)
+      this.thresholdInputEl.value = String(this.threshold);
+    if (this.thresholdValueEl)
+      this.thresholdValueEl.setText(String(this.threshold));
+    if (this.spreadInputEl) this.spreadInputEl.value = String(this.spread);
+    if (this.spreadValueEl) this.spreadValueEl.setText(`${this.spread}%`);
+    if (this.brightnessInputEl)
+      this.brightnessInputEl.value = String(this.brightness);
+    if (this.brightnessValueEl)
+      this.brightnessValueEl.setText(`${this.brightness}%`);
+    if (this.contrastInputEl)
+      this.contrastInputEl.value = String(this.contrast);
+    if (this.contrastValueEl) this.contrastValueEl.setText(`${this.contrast}%`);
+    if (this.resizeInputEl)
+      this.resizeInputEl.value = String(this.resizePercent);
+    if (this.presetSelectEl) {
+      this.presetSelectEl.value =
+        this.defaultPresetName === AUTO_PRESET_OPTION
+          ? AUTO_PRESET_OPTION
+          : this.getActivePresetName();
+    }
+    this.updateResizeValueLabel();
+  }
+
+  private async applyBestCompressionPreset() {
+    if (!this.originalImage) return;
+    const snapshot = {
+      algorithm: this.algorithm,
+      threshold: this.threshold,
+      spread: this.spread,
+      brightness: this.brightness,
+      contrast: this.contrast,
+      resizePercent: this.resizePercent,
+    };
+
+    let bestPreset = PRESETS[0];
+    let bestSavedPercent = -Infinity;
+
+    for (const preset of PRESETS) {
+      this.applyPresetByName(preset.name);
+      this.applyDefaultResizeWidthIfConfigured();
+      const rendered = await this.renderProcessedBlob();
+      if (!rendered || this.originalBytes <= 0) continue;
+      const savedPercent =
+        ((this.originalBytes - rendered.blob.size) / this.originalBytes) * 100;
+      if (savedPercent > bestSavedPercent) {
+        bestSavedPercent = savedPercent;
+        bestPreset = preset;
+      }
+    }
+
+    this.algorithm = snapshot.algorithm;
+    this.threshold = snapshot.threshold;
+    this.spread = snapshot.spread;
+    this.brightness = snapshot.brightness;
+    this.contrast = snapshot.contrast;
+    this.resizePercent = snapshot.resizePercent;
+
+    this.applyPresetByName(bestPreset.name);
+    this.applyDefaultResizeWidthIfConfigured();
+  }
+
+  private applyDefaultResizeWidthIfConfigured() {
+    if (!this.originalImage) return;
+    if (!this.defaultResizeWidthPx) return;
+    this.resizePercent = widthToResizePercent(
+      this.defaultResizeWidthPx,
+      this.originalImage.naturalWidth,
+    );
+  }
+
   private updateResizeValueLabel() {
     if (!this.resizeValueEl) return;
     this.resizeValueEl.setText(`${this.resizePercent}%`);
+  }
+
+  private async renderProcessedBlob() {
+    if (!this.originalImage) return null;
+    const { width, height } = this.getTargetSize(
+      this.originalImage.naturalWidth,
+      this.originalImage.naturalHeight,
+    );
+
+    this.canvas.width = width;
+    this.canvas.height = height;
+    this.ctx.drawImage(this.originalImage, 0, 0, width, height);
+    const imageData = this.ctx.getImageData(0, 0, width, height);
+    this.applyDither(imageData);
+    this.ctx.putImageData(imageData, 0, 0);
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      this.canvas.toBlob((b) => resolve(b), "image/png"),
+    );
+    if (!blob) return null;
+    return { blob, width, height };
   }
 
   private applyDither(imageData: ImageData) {
@@ -632,14 +965,15 @@ class DitherModal extends Modal {
     const width = imageData.width;
     const height = imageData.height;
     const grayBase = new Float32Array(width * height);
+    const brightnessOffset = (this.brightness / 100) * 255;
+    const contrastFactor = contrastPercentToFactor(this.contrast);
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const idx = (y * width + x) * 4;
-        grayBase[y * width + x] = toGray(
-          data[idx],
-          data[idx + 1],
-          data[idx + 2],
-        );
+        const baseGray =
+          toGray(data[idx], data[idx + 1], data[idx + 2]) + brightnessOffset;
+        const contrastGray = (baseGray - 128) * contrastFactor + 128;
+        grayBase[y * width + x] = clampByte(contrastGray);
       }
     }
     applySharpness(grayBase, width, height, this.spread / 100);
@@ -647,8 +981,7 @@ class DitherModal extends Modal {
     if (this.algorithm === "none") {
       for (let i = 0; i < data.length; i += 4) {
         const gray = grayBase[i / 4];
-        const bw = gray > this.threshold ? 255 : 0;
-        const v = this.invertColors ? 255 - bw : bw;
+        const v = this.invertColors ? 255 - gray : gray;
         data[i] = v;
         data[i + 1] = v;
         data[i + 2] = v;
@@ -783,7 +1116,9 @@ class DitherModal extends Modal {
 
   private getDitherBaseName() {
     const fromInput = this.ditherNameInput?.value?.trim() ?? "";
-    const safe = sanitizeFileBaseName(fromInput || this.ditherNameBase || "dithered-image");
+    const safe = sanitizeFileBaseName(
+      fromInput || this.ditherNameBase || "dithered-image",
+    );
     if (this.ditherNameInput) {
       this.ditherNameInput.value = safe;
     }
@@ -873,6 +1208,28 @@ function clampByte(value: number) {
   return value;
 }
 
+function contrastPercentToFactor(percent: number) {
+  const contrast = (percent / 100) * 255;
+  return (259 * (contrast + 255)) / (255 * (259 - contrast));
+}
+
+function widthToResizePercent(targetWidthPx: number, originalWidthPx: number) {
+  if (
+    !Number.isFinite(targetWidthPx) ||
+    targetWidthPx <= 0 ||
+    originalWidthPx <= 0
+  ) {
+    return 100;
+  }
+  const ratio = targetWidthPx / originalWidthPx;
+  const percent = Math.round(ratio * 100);
+  return clampInt(percent, 10, 100);
+}
+
+function clampInt(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   const kb = bytes / 1024;
@@ -948,4 +1305,31 @@ function compactTimestamp(date: Date) {
   const min = String(date.getMinutes()).padStart(2, "0");
   const ss = String(date.getSeconds()).padStart(2, "0");
   return `${yyyy}${mm}${dd}-${hh}${min}${ss}`;
+}
+
+function getSavingsAllegory(totalBytes: number) {
+  if (totalBytes <= 0) {
+    return "No savings yet, but your first dithered image will kick this off.";
+  }
+
+  const comparisons: Array<() => string> = [
+    () =>
+      `That's about ${formatNumber(totalBytes / (1.44 * 1024 * 1024))} classic 1.44 MB floppy disks.`,
+    () =>
+      `That's around ${formatNumber(totalBytes / (1024 * 1024))} one-minute MP3 songs at 128 kbps.`,
+    () =>
+      `That's roughly ${formatNumber(totalBytes / 40000)} NES-era game ROMs (about 40 KB each).`,
+    () =>
+      `At 10 Mbps upload speed, that's about ${formatNumber((totalBytes * 8) / 10_000_000)} seconds of transfer time avoided.`,
+    () =>
+      `That's enough room for about ${formatNumber(totalBytes / (2.5 * 1024 * 1024))} extra phone photos (2.5 MB each).`,
+  ];
+
+  return comparisons[Math.floor(Math.random() * comparisons.length)]();
+}
+
+function formatNumber(value: number) {
+  if (value >= 100) return value.toFixed(0);
+  if (value >= 10) return value.toFixed(1);
+  return value.toFixed(2);
 }
