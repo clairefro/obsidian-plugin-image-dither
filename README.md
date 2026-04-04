@@ -71,6 +71,9 @@ Filenames are automatically deduplicated. If the target name already exists in t
 
 ## Settings
 
+<img width="793" height="491" alt="image" src="https://github.com/user-attachments/assets/b62e212b-2621-4a4a-b797-9379f7d3eb0b" />
+
+
 | Setting                    | Default             | Description                                                                            |
 | -------------------------- | ------------------- | -------------------------------------------------------------------------------------- |
 | Enabled                    | On                  | Toggle paste/drop interception                                                         |
