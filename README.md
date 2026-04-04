@@ -103,6 +103,11 @@ Images are always saved as **PNG** to the attachment location in specified in yo
 
 <img width="500" height="413" alt="image" src="https://github.com/user-attachments/assets/27d2fa95-d4c9-46c4-b36f-857e3b5a4c6a" />
 
+<img width="696" height="460" alt="image" src="https://github.com/user-attachments/assets/13c58e03-9806-4eff-806e-3662cab0dad0" />
+
+![Uploading image.png…]()
+
+
 
 
 
