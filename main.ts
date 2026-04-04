@@ -13,7 +13,9 @@ import {
 type DitherAlgorithm = "none" | "threshold" | "ordered" | "floyd-steinberg";
 
 type Preset = {
-  name: string;
+  id: string;
+  label: string;
+  hint: string;
   algorithm: DitherAlgorithm;
   threshold: number;
   spread: number;
@@ -24,7 +26,9 @@ type Preset = {
 
 const PRESETS: Preset[] = [
   {
-    name: "Balanced",
+    id: "natural-dither",
+    label: "Natural Dither",
+    hint: "best default",
     algorithm: "floyd-steinberg",
     threshold: 128,
     spread: 30,
@@ -33,19 +37,23 @@ const PRESETS: Preset[] = [
     resizePercent: 100,
   },
   {
-    name: "Small",
-    algorithm: "floyd-steinberg",
-    threshold: 128,
-    spread: 20,
-    brightness: 0,
-    contrast: 0,
-    resizePercent: 30,
-  },
-  {
-    name: "Sharp",
+    id: "high-contrast",
+    label: "High Contrast",
+    hint: "bold black/white",
     algorithm: "threshold",
     threshold: 140,
     spread: 70,
+    brightness: 0,
+    contrast: 0,
+    resizePercent: 100,
+  },
+  {
+    id: "grayscale",
+    label: "Grayscale",
+    hint: "no dithering",
+    algorithm: "none",
+    threshold: 128,
+    spread: 0,
     brightness: 0,
     contrast: 0,
     resizePercent: 100,
@@ -66,7 +74,7 @@ const DEFAULT_SETTINGS: ImageDitherSettings = {
   enabled: true,
   totalBytesSaved: 0,
   ditherFilenameTemplate: "{original}-dither",
-  defaultPresetName: "Balanced",
+  defaultPresetName: "natural-dither",
   defaultResizeWidthPx: 700,
 };
 
@@ -160,6 +168,9 @@ export default class ImageDitherPlugin extends Plugin {
     const loaded =
       (await this.loadData()) as Partial<ImageDitherSettings> | null;
     this.settings = { ...DEFAULT_SETTINGS, ...(loaded ?? {}) };
+    this.settings.defaultPresetName = normalizePresetId(
+      this.settings.defaultPresetName,
+    );
     const width = this.settings.defaultResizeWidthPx;
     this.settings.defaultResizeWidthPx =
       typeof width === "number" && Number.isFinite(width) && width > 0
@@ -201,10 +212,11 @@ export default class ImageDitherPlugin extends Plugin {
   }
 
   public async setDefaultPresetName(name: string) {
+    const normalized = normalizePresetId(name);
     const valid =
-      name === AUTO_PRESET_OPTION ||
-      PRESETS.some((preset) => preset.name === name)
-        ? name
+      normalized === AUTO_PRESET_OPTION ||
+      PRESETS.some((preset) => preset.id === normalized)
+        ? normalized
         : DEFAULT_SETTINGS.defaultPresetName;
     this.settings.defaultPresetName = valid;
     await this.saveSettings();
@@ -349,7 +361,7 @@ class ImageDitherSettingTab extends PluginSettingTab {
       .addDropdown((dropdown) => {
         dropdown.addOption(AUTO_PRESET_OPTION, "Auto (max compression)");
         PRESETS.forEach((preset) => {
-          dropdown.addOption(preset.name, preset.name);
+          dropdown.addOption(preset.id, getPresetDisplayLabel(preset));
         });
         dropdown.setValue(this.plugin.getDefaultPresetName());
         dropdown.onChange((value) => {
@@ -525,7 +537,7 @@ class DitherModal extends Modal {
       { value: "floyd-steinberg", label: "Floyd-Steinberg" },
       { value: "ordered", label: "Ordered (Bayer)" },
       { value: "threshold", label: "Threshold" },
-      { value: "none", label: "None" },
+      { value: "none", label: "Grayscale" },
     ].forEach((opt) => {
       algorithmSelect.createEl("option", { value: opt.value, text: opt.label });
     });
@@ -624,8 +636,8 @@ class DitherModal extends Modal {
     });
     PRESETS.forEach((preset) => {
       presetSelect.createEl("option", {
-        value: preset.name,
-        text: preset.name,
+        value: preset.id,
+        text: getPresetDisplayLabel(preset),
       });
     });
     presetSelect.value =
@@ -701,9 +713,10 @@ class DitherModal extends Modal {
         });
         return;
       }
-      const preset = PRESETS.find((p) => p.name === presetSelect.value);
+      const preset = PRESETS.find((p) => p.id === presetSelect.value);
       if (!preset) return;
-      this.applyPresetByName(preset.name);
+      this.defaultPresetName = preset.id;
+      this.applyPresetByName(preset.id);
       this.applyDefaultResizeWidthIfConfigured();
       this.syncControlsFromState();
       this.queuePreviewUpdate();
@@ -838,7 +851,7 @@ class DitherModal extends Modal {
   }
 
   private applyPresetByName(name: string) {
-    const preset = PRESETS.find((p) => p.name === name);
+    const preset = PRESETS.find((p) => p.id === name);
     if (!preset) return;
     this.algorithm = preset.algorithm;
     this.threshold = preset.threshold;
@@ -858,7 +871,7 @@ class DitherModal extends Modal {
         preset.contrast === this.contrast &&
         preset.resizePercent === this.resizePercent,
     );
-    return match?.name ?? DEFAULT_SETTINGS.defaultPresetName;
+    return match?.id ?? DEFAULT_SETTINGS.defaultPresetName;
   }
 
   private syncControlsFromState() {
@@ -902,7 +915,7 @@ class DitherModal extends Modal {
     let bestSavedPercent = -Infinity;
 
     for (const preset of PRESETS) {
-      this.applyPresetByName(preset.name);
+      this.applyPresetByName(preset.id);
       this.applyDefaultResizeWidthIfConfigured();
       const rendered = await this.renderProcessedBlob();
       if (!rendered || this.originalBytes <= 0) continue;
@@ -921,7 +934,7 @@ class DitherModal extends Modal {
     this.contrast = snapshot.contrast;
     this.resizePercent = snapshot.resizePercent;
 
-    this.applyPresetByName(bestPreset.name);
+    this.applyPresetByName(bestPreset.id);
     this.applyDefaultResizeWidthIfConfigured();
   }
 
@@ -1213,6 +1226,24 @@ function contrastPercentToFactor(percent: number) {
   return (259 * (contrast + 255)) / (255 * (259 - contrast));
 }
 
+function getPresetDisplayLabel(preset: Preset) {
+  return `${preset.label} (${preset.hint})`;
+}
+
+function normalizePresetId(value: string) {
+  const normalized = (value ?? "").trim();
+  if (normalized === AUTO_PRESET_OPTION) return AUTO_PRESET_OPTION;
+  const oldToNew: Record<string, string> = {
+    Balanced: "natural-dither",
+    Small: AUTO_PRESET_OPTION,
+    Sharp: "high-contrast",
+    Grayscale: "grayscale",
+    "max-compression": AUTO_PRESET_OPTION,
+  };
+  if (oldToNew[normalized]) return oldToNew[normalized];
+  return normalized;
+}
+
 function widthToResizePercent(targetWidthPx: number, originalWidthPx: number) {
   if (
     !Number.isFinite(targetWidthPx) ||
@@ -1322,7 +1353,7 @@ function getSavingsAllegory(totalBytes: number) {
     () =>
       `At 10 Mbps upload speed, that's about ${formatNumber((totalBytes * 8) / 10_000_000)} seconds of transfer time avoided.`,
     () =>
-      `That's enough room for about ${formatNumber(totalBytes / (2.5 * 1024 * 1024))} extra phone photos (2.5 MB each).`,
+      `That's enough room for about ${formatNumber(totalBytes / (2.5 * 1024 * 1024))} extra photos on your phone (2.5 MB each).`,
   ];
 
   return comparisons[Math.floor(Math.random() * comparisons.length)]();
