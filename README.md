@@ -1,8 +1,6 @@
 # Image Dither — Obsidian Plugin
 
-Intercepts images pasted or dropped into a note and lets you dither and resize them before saving, keeping your vault lean.
-
-Adjust the settings, then choose to save the dithered version or fall back to the original
+Intercepts images pasted or dropped into notes so you can aestehtically dither and resize them, saving storage space
 
 ![dith-1](https://github.com/user-attachments/assets/6e9f7146-7124-4ac9-9519-023a4d50e9c0)
 
