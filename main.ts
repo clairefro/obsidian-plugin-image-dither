@@ -10,7 +10,11 @@ import {
   Setting,
 } from "obsidian";
 
-type DitherAlgorithm = "none" | "threshold" | "ordered" | "floyd-steinberg";
+type DitherAlgorithm =
+  | "grayscale"
+  | "threshold"
+  | "ordered"
+  | "floyd-steinberg";
 
 type Preset = {
   id: string;
@@ -51,7 +55,7 @@ const PRESETS: Preset[] = [
     id: "grayscale",
     label: "Grayscale",
     hint: "no dithering",
-    algorithm: "none",
+    algorithm: "grayscale",
     threshold: 128,
     spread: 0,
     brightness: 0,
@@ -424,6 +428,8 @@ class DitherModal extends Modal {
   private useOriginalBtn?: HTMLButtonElement;
   private ditherNameInput?: HTMLInputElement;
   private ditherNameBase = "";
+  private lastAutoDitherNameBase = "";
+  private isDitherNameAuto = true;
   private resizeValueEl?: HTMLDivElement;
   private algorithmSelectEl?: HTMLSelectElement;
   private thresholdInputEl?: HTMLInputElement;
@@ -520,6 +526,12 @@ class DitherModal extends Modal {
       attr: { type: "text", spellcheck: "false", placeholder: "Filename" },
     });
     afterNameRow.createDiv({ cls: "dither-filename-ext", text: ".png" });
+    this.ditherNameInput.addEventListener("input", () => {
+      const current = sanitizeFileBaseName(
+        this.ditherNameInput?.value?.trim() ?? "",
+      );
+      this.isDitherNameAuto = current === this.lastAutoDitherNameBase;
+    });
     void this.applyTemplateDefaultDitherName();
 
     this.previewSavings = previewCol.createDiv({ cls: "dither-savings" });
@@ -537,7 +549,7 @@ class DitherModal extends Modal {
       { value: "floyd-steinberg", label: "Floyd-Steinberg" },
       { value: "ordered", label: "Ordered (Bayer)" },
       { value: "threshold", label: "Threshold" },
-      { value: "none", label: "Grayscale" },
+      { value: "grayscale", label: "Grayscale" },
     ].forEach((opt) => {
       algorithmSelect.createEl("option", { value: opt.value, text: opt.label });
     });
@@ -666,6 +678,7 @@ class DitherModal extends Modal {
 
     algorithmSelect.addEventListener("change", () => {
       this.algorithm = algorithmSelect.value as DitherAlgorithm;
+      void this.maybeRefreshTemplatedFilename();
       this.queuePreviewUpdate();
     });
 
@@ -696,6 +709,7 @@ class DitherModal extends Modal {
     resizeInput.addEventListener("input", () => {
       this.resizePercent = Number(resizeInput.value);
       this.updateResizeValueLabel();
+      void this.maybeRefreshTemplatedFilename();
       this.queuePreviewUpdate();
     });
 
@@ -709,6 +723,7 @@ class DitherModal extends Modal {
         this.defaultPresetName = AUTO_PRESET_OPTION;
         void this.applyBestCompressionPreset().then(() => {
           this.syncControlsFromState();
+          void this.maybeRefreshTemplatedFilename();
           this.queuePreviewUpdate();
         });
         return;
@@ -719,6 +734,7 @@ class DitherModal extends Modal {
       this.applyPresetByName(preset.id);
       this.applyDefaultResizeWidthIfConfigured();
       this.syncControlsFromState();
+      void this.maybeRefreshTemplatedFilename();
       this.queuePreviewUpdate();
     });
 
@@ -991,7 +1007,7 @@ class DitherModal extends Modal {
     }
     applySharpness(grayBase, width, height, this.spread / 100);
 
-    if (this.algorithm === "none") {
+    if (this.algorithm === "grayscale") {
       for (let i = 0; i < data.length; i += 4) {
         const gray = grayBase[i / 4];
         const v = this.invertColors ? 255 - gray : gray;
@@ -1158,9 +1174,22 @@ class DitherModal extends Modal {
       "png",
     );
     this.ditherNameBase = uniqueBase;
+    this.lastAutoDitherNameBase = uniqueBase;
+    this.isDitherNameAuto = true;
     if (this.ditherNameInput) {
       this.ditherNameInput.value = uniqueBase;
     }
+  }
+
+  private usesDynamicTemplateTokens() {
+    const template = this.filenameTemplate?.trim() || "{original}-dither";
+    return template.includes("{algo}") || template.includes("{resize}");
+  }
+
+  private async maybeRefreshTemplatedFilename() {
+    if (!this.isDitherNameAuto) return;
+    if (!this.usesDynamicTemplateTokens()) return;
+    await this.applyTemplateDefaultDitherName();
   }
 
   private async getUniqueBaseForCurrentFolder(
