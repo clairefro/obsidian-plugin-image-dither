@@ -32,6 +32,10 @@ Adjust the settings, then choose to save the dithered version or fall back to th
 - **Grayscale** — Smooth grayscale conversion at full size
 - **Auto (max compression)** — tests all presets and picks the one with the smallest output
 
+### Transparency support
+
+The alpha channel is never modified. Transparent PNGs remain transparent after dithering.
+
 ### Compression feedback
 
 - Live size display for original and dithered output (e.g. `1.2 MB → 48.3 KB`)
