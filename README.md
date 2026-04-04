@@ -4,6 +4,8 @@ Intercepts images pasted or dropped into a note and lets you dither and resize t
 
 Adjust the settings, then choose to save the dithered version or fall back to the original
 
+<img width="991" height="816" alt="image" src="https://github.com/user-attachments/assets/76dc6833-cced-415a-a621-5f64d30069fa" />
+
 ## Features
 
 ### Dithering algorithms
