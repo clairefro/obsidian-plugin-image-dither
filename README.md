@@ -38,6 +38,19 @@ Adjust the settings, then choose to save the dithered version or fall back to th
 - Percentage saved with color-coded indicator (good / warn / danger)
 - Running total of bytes saved across all uses, shown in Settings
 
+### Output filename
+
+The dithered filename is pre-filled in the modal using a configurable template and can be edited before saving. Supported tokens:
+
+| Token         | Replaced with                           |
+| ------------- | --------------------------------------- |
+| `{original}`  | Original filename without extension     |
+| `{algo}`      | Algorithm name (e.g. `floyd-steinberg`) |
+| `{resize}`    | Resize percentage (e.g. `75`)           |
+| `{timestamp}` | ISO timestamp at time of save           |
+
+Filenames are automatically deduplicated. If the target name already exists in the folder, a numeric suffix is appended.
+
 ## Settings
 
 | Setting                    | Default             | Description                                                                            |
@@ -56,4 +69,4 @@ The ribbon icon also toggles the plugin on/off.
 
 ## Output format
 
-Images are always saved as **PNG** to the attachment location in specified in your Obsidian preferences.
+Images are always saved as **PNG** to the attachment location in specified in your Obsidian preferences > Files and links.
