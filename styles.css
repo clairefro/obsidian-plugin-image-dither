@@ -143,11 +143,17 @@
 
 .dither-modal-container .dither-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
   grid-column: 1 / -1;
+}
+
+.dither-modal-container .dither-actions .dither-actions-right-group {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
 }
 
 .dither-modal-container .dither-value {
@@ -183,6 +189,57 @@
   color: var(--text-success, #4caf50);
 }
 
+.dither-confirm-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+.dither-confirm-detail {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.dither-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.dither-save-preset-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.dither-preset-name-input {
+  width: 100%;
+}
+
+.dither-preset-name-error {
+  display: none;
+  color: var(--text-error);
+  font-size: 12px;
+  min-height: 0;
+}
+
+.dither-preset-name-error.is-visible {
+  display: block;
+}
+
+.dither-save-preset-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.dither-save-preset-btn {
+  flex-shrink: 0;
+}
+
 .side-dock-ribbon-action.is-disabled[aria-label^="Image Dither"] {
   opacity: 0.45;
 }
@@ -191,7 +248,7 @@
   color: var(--text-success, #4caf50);
 }
 
-.image-dither-dynamic-message {
+.image-dither-stats .image-dither-dynamic-message {
   color: var(--text-muted);
 }
 

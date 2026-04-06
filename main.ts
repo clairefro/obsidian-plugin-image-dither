@@ -84,6 +84,7 @@ type ImageDitherSettings = {
   ditherFilenameTemplate: string;
   defaultPresetName: string;
   defaultResizeWidthPx: number | null;
+  customPresets: Preset[];
 };
 
 const DEFAULT_SETTINGS: ImageDitherSettings = {
@@ -92,6 +93,7 @@ const DEFAULT_SETTINGS: ImageDitherSettings = {
   ditherFilenameTemplate: "{original}-dither",
   defaultPresetName: "natural-dither",
   defaultResizeWidthPx: 700,
+  customPresets: [],
 };
 
 export default class ImageDitherPlugin extends Plugin {
@@ -192,6 +194,9 @@ export default class ImageDitherPlugin extends Plugin {
       typeof width === "number" && Number.isFinite(width) && width > 0
         ? Math.round(width)
         : null;
+    if (!Array.isArray(this.settings.customPresets)) {
+      this.settings.customPresets = [];
+    }
   }
 
   private async saveSettings() {
@@ -231,7 +236,9 @@ export default class ImageDitherPlugin extends Plugin {
     const normalized = normalizePresetId(name);
     const valid =
       normalized === AUTO_PRESET_OPTION ||
-      PRESETS.some((preset) => preset.id === normalized)
+      [...PRESETS, ...this.settings.customPresets].some(
+        (preset) => preset.id === normalized,
+      )
         ? normalized
         : DEFAULT_SETTINGS.defaultPresetName;
     this.settings.defaultPresetName = valid;
@@ -250,6 +257,27 @@ export default class ImageDitherPlugin extends Plugin {
 
   public async addToBytesSaved(bytes: number) {
     this.settings.totalBytesSaved += Math.max(0, Math.round(bytes));
+    await this.saveSettings();
+    this.settingsTab?.refresh();
+  }
+
+  public getCustomPresets(): Preset[] {
+    return this.settings.customPresets;
+  }
+
+  public async addCustomPreset(preset: Preset): Promise<void> {
+    this.settings.customPresets.push(preset);
+    await this.saveSettings();
+    this.settingsTab?.refresh();
+  }
+
+  public async deleteCustomPreset(id: string): Promise<void> {
+    this.settings.customPresets = this.settings.customPresets.filter(
+      (p) => p.id !== id,
+    );
+    if (this.settings.defaultPresetName === id) {
+      this.settings.defaultPresetName = DEFAULT_SETTINGS.defaultPresetName;
+    }
     await this.saveSettings();
     this.settingsTab?.refresh();
   }
@@ -292,9 +320,13 @@ export default class ImageDitherPlugin extends Plugin {
       async (savedBytes: number) => {
         await this.addToBytesSaved(savedBytes);
       },
+      async (preset: Preset) => {
+        await this.addCustomPreset(preset);
+      },
       this.getDitherFilenameTemplate(),
       this.getDefaultPresetName(),
       this.getDefaultResizeWidthPx(),
+      this.getCustomPresets(),
     );
     modal.open();
   }
@@ -311,11 +343,12 @@ class ImageDitherSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+    this.renderStats(containerEl);
     this.renderEnabledSetting(containerEl);
     this.renderFilenameTemplateSetting(containerEl);
     this.renderDefaultPresetSetting(containerEl);
     this.renderDefaultWidthSetting(containerEl);
-    this.renderStats(containerEl);
+    this.renderCustomPresetsSetting(containerEl);
   }
 
   refresh() {
@@ -324,17 +357,18 @@ class ImageDitherSettingTab extends PluginSettingTab {
 
   private renderStats(containerEl: HTMLElement) {
     const totalBytes = this.plugin.getTotalBytesSaved();
-    const bytesLabel = formatBytes(totalBytes);
-    const dynamicMessage = getSavingsAllegory(totalBytes);
     const statsSection = containerEl.createDiv({ cls: "image-dither-stats" });
-    const totalLine = statsSection.createEl("p");
-    totalLine.appendText("You've saved ");
-    totalLine.createSpan({
-      cls: "image-dither-saved-amount",
-      text: bytesLabel,
-    });
-    totalLine.appendText(" so far using Image Dither.");
-
+    if (totalBytes > 0) {
+      const bytesLabel = formatBytes(totalBytes);
+      const totalLine = statsSection.createEl("p");
+      totalLine.appendText("You've saved ");
+      totalLine.createSpan({
+        cls: "image-dither-saved-amount",
+        text: bytesLabel,
+      });
+      totalLine.appendText(" so far using Image Dither.");
+    }
+    const dynamicMessage = getSavingsAllegory(totalBytes);
     statsSection.createEl("p", {
       cls: "image-dither-dynamic-message",
       text: dynamicMessage,
@@ -379,6 +413,16 @@ class ImageDitherSettingTab extends PluginSettingTab {
         PRESETS.forEach((preset) => {
           dropdown.addOption(preset.id, getPresetDisplayLabel(preset));
         });
+        const customPresets = this.plugin.getCustomPresets();
+        if (customPresets.length > 0) {
+          const sep = dropdown.selectEl.createEl("option", {
+            text: "── Custom ──",
+          });
+          sep.disabled = true;
+          customPresets.forEach((preset) => {
+            dropdown.addOption(preset.id, getPresetDisplayLabel(preset));
+          });
+        }
         dropdown.setValue(this.plugin.getDefaultPresetName());
         dropdown.onChange((value) => {
           void this.plugin.setDefaultPresetName(value);
@@ -419,6 +463,35 @@ class ImageDitherSettingTab extends PluginSettingTab {
         text.inputEl.step = "1";
       });
   }
+
+  private renderCustomPresetsSetting(containerEl: HTMLElement) {
+    const customPresets = this.plugin.getCustomPresets();
+    if (customPresets.length === 0) return;
+    containerEl.createEl("h3", {
+      text: "Custom presets",
+      cls: "dither-settings-section-heading",
+    });
+    customPresets.forEach((preset) => {
+      new Setting(containerEl)
+        .setName(preset.label)
+        .setDesc(
+          `${preset.algorithm} · threshold ${preset.threshold} · sharpness ${preset.spread}% · resize ${preset.resizePercent}%`,
+        )
+        .addButton((btn) => {
+          btn
+            .setButtonText("Delete")
+            .setWarning()
+            .onClick(() => {
+              new ConfirmModal(
+                this.plugin.app,
+                `Delete preset "${preset.label}"?`,
+                "This cannot be undone.",
+                () => void this.plugin.deleteCustomPreset(preset.id),
+              ).open();
+            });
+        });
+    });
+  }
 }
 
 class DitherModal extends Modal {
@@ -454,6 +527,8 @@ class DitherModal extends Modal {
   private contrastValueEl?: HTMLDivElement;
   private resizeInputEl?: HTMLInputElement;
   private presetSelectEl?: HTMLSelectElement;
+  private onSavePreset!: (preset: Preset) => Promise<void>;
+  private customPresets: Preset[] = [];
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
 
@@ -477,18 +552,22 @@ class DitherModal extends Modal {
     view: MarkdownView,
     onClose: () => void,
     onDitherSaved: (savedBytes: number) => Promise<void>,
+    onSavePreset: (preset: Preset) => Promise<void>,
     filenameTemplate: string,
     defaultPresetName: string,
     defaultResizeWidthPx: number | null,
+    customPresets: Preset[],
   ) {
     super(app);
     this.file = file;
     this.view = view;
     this.onCloseCallback = onClose;
     this.onDitherSaved = onDitherSaved;
+    this.onSavePreset = onSavePreset;
     this.filenameTemplate = filenameTemplate;
     this.defaultPresetName = defaultPresetName;
     this.defaultResizeWidthPx = defaultResizeWidthPx;
+    this.customPresets = [...customPresets];
 
     this.canvas = document.createElement("canvas");
     const ctx = this.canvas.getContext("2d", { willReadFrequently: true });
@@ -665,10 +744,22 @@ class DitherModal extends Modal {
         text: getPresetDisplayLabel(preset),
       });
     });
+    if (this.customPresets.length > 0) {
+      const customSep = presetSelect.createEl("option", {
+        text: "── Custom ──",
+      });
+      customSep.disabled = true;
+      this.customPresets.forEach((preset) => {
+        presetSelect.createEl("option", {
+          value: preset.id,
+          text: getPresetDisplayLabel(preset),
+        });
+      });
+    }
     presetSelect.value =
       this.defaultPresetName === AUTO_PRESET_OPTION
         ? AUTO_PRESET_OPTION
-        : this.getActivePresetName();
+        : this.defaultPresetName;
     this.presetSelectEl = presetSelect;
 
     const invertRow = controls.createDiv({ cls: "dither-row" });
@@ -680,11 +771,18 @@ class DitherModal extends Modal {
     invertRow.createDiv({ cls: "dither-value", text: "" });
 
     const actions = controls.createDiv({ cls: "dither-actions" });
-    const cancelBtn = actions.createEl("button", { text: "Cancel" });
-    const useOriginalBtn = actions.createEl("button", {
+    const savePresetBtn = actions.createEl("button", {
+      text: "Save current as preset",
+    });
+    savePresetBtn.addClass("dither-save-preset-btn");
+    const actionsRight = actions.createDiv({
+      cls: "dither-actions-right-group",
+    });
+    const cancelBtn = actionsRight.createEl("button", { text: "Cancel" });
+    const useOriginalBtn = actionsRight.createEl("button", {
       text: "Use original",
     });
-    const saveBtn = actions.createEl("button", { text: "Use dithered" });
+    const saveBtn = actionsRight.createEl("button", { text: "Use dithered" });
     saveBtn.addClass("mod-cta");
     this.useDitheredBtn = saveBtn;
     this.useOriginalBtn = useOriginalBtn;
@@ -741,7 +839,9 @@ class DitherModal extends Modal {
         });
         return;
       }
-      const preset = PRESETS.find((p) => p.id === presetSelect.value);
+      const preset = [...PRESETS, ...this.customPresets].find(
+        (p) => p.id === presetSelect.value,
+      );
       if (!preset) return;
       this.defaultPresetName = preset.id;
       this.applyPresetByName(preset.id);
@@ -752,6 +852,47 @@ class DitherModal extends Modal {
     });
 
     cancelBtn.addEventListener("click", () => this.close());
+    savePresetBtn.addEventListener("click", () => {
+      const existingLabels = [...PRESETS, ...this.customPresets].map((p) =>
+        p.label.toLowerCase(),
+      );
+      new SavePresetModal(this.app, existingLabels, (name) => {
+        const id = slugifyPresetLabel(name, [
+          ...PRESETS,
+          ...this.customPresets,
+        ]);
+        const preset: Preset = {
+          id,
+          label: name,
+          hint: "custom",
+          algorithm: this.algorithm,
+          threshold: this.threshold,
+          spread: this.spread,
+          brightness: this.brightness,
+          contrast: this.contrast,
+          resizePercent: this.resizePercent,
+        };
+        void this.onSavePreset(preset).then(() => {
+          this.customPresets.push(preset);
+          this.defaultPresetName = preset.id;
+          const hasSep = Array.from(presetSelect.options).some(
+            (o) => o.text === "── Custom ──",
+          );
+          if (!hasSep) {
+            const customSep = presetSelect.createEl("option", {
+              text: "── Custom ──",
+            });
+            customSep.disabled = true;
+          }
+          presetSelect.createEl("option", {
+            value: preset.id,
+            text: getPresetDisplayLabel(preset),
+          });
+          presetSelect.value = preset.id;
+          new Notice(`Preset "${name}" saved`);
+        });
+      }).open();
+    });
     useOriginalBtn.addEventListener("click", () => {
       void this.saveImage(true);
     });
@@ -880,7 +1021,9 @@ class DitherModal extends Modal {
   }
 
   private applyPresetByName(name: string) {
-    const preset = PRESETS.find((p) => p.id === name);
+    const preset = [...PRESETS, ...this.customPresets].find(
+      (p) => p.id === name,
+    );
     if (!preset) return;
     this.algorithm = preset.algorithm;
     this.threshold = preset.threshold;
@@ -891,7 +1034,7 @@ class DitherModal extends Modal {
   }
 
   private getActivePresetName() {
-    const match = PRESETS.find(
+    const match = [...PRESETS, ...this.customPresets].find(
       (preset) =>
         preset.algorithm === this.algorithm &&
         preset.threshold === this.threshold &&
@@ -943,7 +1086,8 @@ class DitherModal extends Modal {
     let bestPreset = PRESETS[0];
     let bestSavedPercent = -Infinity;
 
-    for (const preset of PRESETS) {
+    const allPresets = [...PRESETS, ...this.customPresets];
+    for (const preset of allPresets) {
       this.applyPresetByName(preset.id);
       this.applyDefaultResizeWidthIfConfigured();
       const rendered = await this.renderProcessedBlob();
@@ -1239,6 +1383,130 @@ class DitherModal extends Modal {
     const fileName = uniquePath.split("/").pop() ?? `${baseName}.${extension}`;
     return sanitizeFileBaseName(stripExtension(fileName));
   }
+}
+
+class ConfirmModal extends Modal {
+  private message: string;
+  private detail: string;
+  private onConfirm: () => void;
+
+  constructor(
+    app: App,
+    message: string,
+    detail: string,
+    onConfirm: () => void,
+  ) {
+    super(app);
+    this.message = message;
+    this.detail = detail;
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen() {
+    this.titleEl.setText(this.message);
+    this.contentEl.addClass("dither-confirm-modal");
+    if (this.detail) {
+      this.contentEl.createEl("p", {
+        text: this.detail,
+        cls: "dither-confirm-detail",
+      });
+    }
+    const actions = this.contentEl.createDiv({ cls: "dither-confirm-actions" });
+    const cancelBtn = actions.createEl("button", { text: "Cancel" });
+    const confirmBtn = actions.createEl("button", { text: "Delete" });
+    confirmBtn.addClass("mod-warning");
+    cancelBtn.addEventListener("click", () => this.close());
+    confirmBtn.addEventListener("click", () => {
+      this.close();
+      this.onConfirm();
+    });
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+class SavePresetModal extends Modal {
+  private existingLabels: string[];
+  private onConfirm: (name: string) => void;
+
+  constructor(
+    app: App,
+    existingLabels: string[],
+    onConfirm: (name: string) => void,
+  ) {
+    super(app);
+    this.existingLabels = existingLabels;
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen() {
+    this.titleEl.setText("Save as preset");
+    this.contentEl.addClass("dither-save-preset-modal");
+    const input = this.contentEl.createEl("input", {
+      cls: "dither-preset-name-input",
+      attr: { type: "text", placeholder: "e.g. Dark portrait" },
+    });
+    const errorEl = this.contentEl.createDiv({
+      cls: "dither-preset-name-error",
+    });
+    const actions = this.contentEl.createDiv({
+      cls: "dither-save-preset-actions",
+    });
+    const cancelBtn = actions.createEl("button", { text: "Cancel" });
+    const confirmBtn = actions.createEl("button", { text: "Save" });
+    confirmBtn.addClass("mod-cta");
+
+    const validate = (value: string) => {
+      const trimmed = value.trim();
+      if (trimmed && this.existingLabels.includes(trimmed.toLowerCase())) {
+        errorEl.setText(
+          `"${trimmed}" already exists — choose a different name`,
+        );
+        errorEl.addClass("is-visible");
+        confirmBtn.setAttr("disabled", "");
+        return false;
+      }
+      errorEl.setText("");
+      errorEl.removeClass("is-visible");
+      confirmBtn.removeAttribute("disabled");
+      return true;
+    };
+
+    const save = () => {
+      const trimmed = input.value.trim();
+      if (!trimmed || !validate(trimmed)) return;
+      this.close();
+      this.onConfirm(trimmed);
+    };
+
+    input.addEventListener("input", () => validate(input.value));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") save();
+      if (e.key === "Escape") this.close();
+    });
+    confirmBtn.addEventListener("click", save);
+    cancelBtn.addEventListener("click", () => this.close());
+    setTimeout(() => input.focus(), 0);
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+function slugifyPresetLabel(label: string, existing: Preset[]): string {
+  const base =
+    "custom-" +
+    (label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "preset");
+  if (!existing.some((p) => p.id === base)) return base;
+  let i = 2;
+  while (existing.some((p) => p.id === `${base}-${i}`)) i++;
+  return `${base}-${i}`;
 }
 
 function toGray(r: number, g: number, b: number) {

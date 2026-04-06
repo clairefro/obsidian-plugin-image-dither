@@ -76,7 +76,8 @@ var DEFAULT_SETTINGS = {
   totalBytesSaved: 0,
   ditherFilenameTemplate: "{original}-dither",
   defaultPresetName: "natural-dither",
-  defaultResizeWidthPx: 700
+  defaultResizeWidthPx: 700,
+  customPresets: []
 };
 var ImageDitherPlugin = class extends import_obsidian.Plugin {
   constructor() {
@@ -151,6 +152,9 @@ var ImageDitherPlugin = class extends import_obsidian.Plugin {
     );
     const width = this.settings.defaultResizeWidthPx;
     this.settings.defaultResizeWidthPx = typeof width === "number" && Number.isFinite(width) && width > 0 ? Math.round(width) : null;
+    if (!Array.isArray(this.settings.customPresets)) {
+      this.settings.customPresets = [];
+    }
   }
   async saveSettings() {
     await this.saveData(this.settings);
@@ -180,7 +184,9 @@ var ImageDitherPlugin = class extends import_obsidian.Plugin {
   }
   async setDefaultPresetName(name) {
     const normalized = normalizePresetId(name);
-    const valid = normalized === AUTO_PRESET_OPTION || PRESETS.some((preset) => preset.id === normalized) ? normalized : DEFAULT_SETTINGS.defaultPresetName;
+    const valid = normalized === AUTO_PRESET_OPTION || [...PRESETS, ...this.settings.customPresets].some(
+      (preset) => preset.id === normalized
+    ) ? normalized : DEFAULT_SETTINGS.defaultPresetName;
     this.settings.defaultPresetName = valid;
     await this.saveSettings();
   }
@@ -194,6 +200,26 @@ var ImageDitherPlugin = class extends import_obsidian.Plugin {
   async addToBytesSaved(bytes) {
     var _a;
     this.settings.totalBytesSaved += Math.max(0, Math.round(bytes));
+    await this.saveSettings();
+    (_a = this.settingsTab) == null ? void 0 : _a.refresh();
+  }
+  getCustomPresets() {
+    return this.settings.customPresets;
+  }
+  async addCustomPreset(preset) {
+    var _a;
+    this.settings.customPresets.push(preset);
+    await this.saveSettings();
+    (_a = this.settingsTab) == null ? void 0 : _a.refresh();
+  }
+  async deleteCustomPreset(id) {
+    var _a;
+    this.settings.customPresets = this.settings.customPresets.filter(
+      (p) => p.id !== id
+    );
+    if (this.settings.defaultPresetName === id) {
+      this.settings.defaultPresetName = DEFAULT_SETTINGS.defaultPresetName;
+    }
     await this.saveSettings();
     (_a = this.settingsTab) == null ? void 0 : _a.refresh();
   }
@@ -232,9 +258,13 @@ var ImageDitherPlugin = class extends import_obsidian.Plugin {
       async (savedBytes) => {
         await this.addToBytesSaved(savedBytes);
       },
+      async (preset) => {
+        await this.addCustomPreset(preset);
+      },
       this.getDitherFilenameTemplate(),
       this.getDefaultPresetName(),
-      this.getDefaultResizeWidthPx()
+      this.getDefaultResizeWidthPx(),
+      this.getCustomPresets()
     );
     modal.open();
   }
@@ -247,27 +277,30 @@ var ImageDitherSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
+    this.renderStats(containerEl);
     this.renderEnabledSetting(containerEl);
     this.renderFilenameTemplateSetting(containerEl);
     this.renderDefaultPresetSetting(containerEl);
     this.renderDefaultWidthSetting(containerEl);
-    this.renderStats(containerEl);
+    this.renderCustomPresetsSetting(containerEl);
   }
   refresh() {
     this.display();
   }
   renderStats(containerEl) {
     const totalBytes = this.plugin.getTotalBytesSaved();
-    const bytesLabel = formatBytes(totalBytes);
-    const dynamicMessage = getSavingsAllegory(totalBytes);
     const statsSection = containerEl.createDiv({ cls: "image-dither-stats" });
-    const totalLine = statsSection.createEl("p");
-    totalLine.appendText("You've saved ");
-    totalLine.createSpan({
-      cls: "image-dither-saved-amount",
-      text: bytesLabel
-    });
-    totalLine.appendText(" so far using Image Dither.");
+    if (totalBytes > 0) {
+      const bytesLabel = formatBytes(totalBytes);
+      const totalLine = statsSection.createEl("p");
+      totalLine.appendText("You've saved ");
+      totalLine.createSpan({
+        cls: "image-dither-saved-amount",
+        text: bytesLabel
+      });
+      totalLine.appendText(" so far using Image Dither.");
+    }
+    const dynamicMessage = getSavingsAllegory(totalBytes);
     statsSection.createEl("p", {
       cls: "image-dither-dynamic-message",
       text: dynamicMessage
@@ -297,6 +330,16 @@ var ImageDitherSettingTab = class extends import_obsidian.PluginSettingTab {
       PRESETS.forEach((preset) => {
         dropdown.addOption(preset.id, getPresetDisplayLabel(preset));
       });
+      const customPresets = this.plugin.getCustomPresets();
+      if (customPresets.length > 0) {
+        const sep = dropdown.selectEl.createEl("option", {
+          text: "\u2500\u2500 Custom \u2500\u2500"
+        });
+        sep.disabled = true;
+        customPresets.forEach((preset) => {
+          dropdown.addOption(preset.id, getPresetDisplayLabel(preset));
+        });
+      }
       dropdown.setValue(this.plugin.getDefaultPresetName());
       dropdown.onChange((value) => {
         void this.plugin.setDefaultPresetName(value);
@@ -323,13 +366,36 @@ var ImageDitherSettingTab = class extends import_obsidian.PluginSettingTab {
       text.inputEl.step = "1";
     });
   }
+  renderCustomPresetsSetting(containerEl) {
+    const customPresets = this.plugin.getCustomPresets();
+    if (customPresets.length === 0) return;
+    containerEl.createEl("h3", {
+      text: "Custom presets",
+      cls: "dither-settings-section-heading"
+    });
+    customPresets.forEach((preset) => {
+      new import_obsidian.Setting(containerEl).setName(preset.label).setDesc(
+        `${preset.algorithm} \xB7 threshold ${preset.threshold} \xB7 sharpness ${preset.spread}% \xB7 resize ${preset.resizePercent}%`
+      ).addButton((btn) => {
+        btn.setButtonText("Delete").setWarning().onClick(() => {
+          new ConfirmModal(
+            this.plugin.app,
+            `Delete preset "${preset.label}"?`,
+            "This cannot be undone.",
+            () => void this.plugin.deleteCustomPreset(preset.id)
+          ).open();
+        });
+      });
+    });
+  }
 };
 var DitherModal = class extends import_obsidian.Modal {
-  constructor(app, file, view, onClose, onDitherSaved, filenameTemplate, defaultPresetName, defaultResizeWidthPx) {
+  constructor(app, file, view, onClose, onDitherSaved, onSavePreset, filenameTemplate, defaultPresetName, defaultResizeWidthPx, customPresets) {
     super(app);
     this.ditherNameBase = "";
     this.lastAutoDitherNameBase = "";
     this.isDitherNameAuto = true;
+    this.customPresets = [];
     this.algorithm = "floyd-steinberg";
     this.threshold = 128;
     this.spread = 30;
@@ -344,9 +410,11 @@ var DitherModal = class extends import_obsidian.Modal {
     this.view = view;
     this.onCloseCallback = onClose;
     this.onDitherSaved = onDitherSaved;
+    this.onSavePreset = onSavePreset;
     this.filenameTemplate = filenameTemplate;
     this.defaultPresetName = defaultPresetName;
     this.defaultResizeWidthPx = defaultResizeWidthPx;
+    this.customPresets = [...customPresets];
     this.canvas = document.createElement("canvas");
     const ctx = this.canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) throw new Error("Failed to create canvas context");
@@ -510,7 +578,19 @@ var DitherModal = class extends import_obsidian.Modal {
         text: getPresetDisplayLabel(preset)
       });
     });
-    presetSelect.value = this.defaultPresetName === AUTO_PRESET_OPTION ? AUTO_PRESET_OPTION : this.getActivePresetName();
+    if (this.customPresets.length > 0) {
+      const customSep = presetSelect.createEl("option", {
+        text: "\u2500\u2500 Custom \u2500\u2500"
+      });
+      customSep.disabled = true;
+      this.customPresets.forEach((preset) => {
+        presetSelect.createEl("option", {
+          value: preset.id,
+          text: getPresetDisplayLabel(preset)
+        });
+      });
+    }
+    presetSelect.value = this.defaultPresetName === AUTO_PRESET_OPTION ? AUTO_PRESET_OPTION : this.defaultPresetName;
     this.presetSelectEl = presetSelect;
     const invertRow = controls.createDiv({ cls: "dither-row" });
     invertRow.createEl("label", { text: "Invert colors" });
@@ -520,11 +600,18 @@ var DitherModal = class extends import_obsidian.Modal {
     invertToggle.checked = this.invertColors;
     invertRow.createDiv({ cls: "dither-value", text: "" });
     const actions = controls.createDiv({ cls: "dither-actions" });
-    const cancelBtn = actions.createEl("button", { text: "Cancel" });
-    const useOriginalBtn = actions.createEl("button", {
+    const savePresetBtn = actions.createEl("button", {
+      text: "Save current as preset"
+    });
+    savePresetBtn.addClass("dither-save-preset-btn");
+    const actionsRight = actions.createDiv({
+      cls: "dither-actions-right-group"
+    });
+    const cancelBtn = actionsRight.createEl("button", { text: "Cancel" });
+    const useOriginalBtn = actionsRight.createEl("button", {
       text: "Use original"
     });
-    const saveBtn = actions.createEl("button", { text: "Use dithered" });
+    const saveBtn = actionsRight.createEl("button", { text: "Use dithered" });
     saveBtn.addClass("mod-cta");
     this.useDitheredBtn = saveBtn;
     this.useOriginalBtn = useOriginalBtn;
@@ -573,7 +660,9 @@ var DitherModal = class extends import_obsidian.Modal {
         });
         return;
       }
-      const preset = PRESETS.find((p) => p.id === presetSelect.value);
+      const preset = [...PRESETS, ...this.customPresets].find(
+        (p) => p.id === presetSelect.value
+      );
       if (!preset) return;
       this.defaultPresetName = preset.id;
       this.applyPresetByName(preset.id);
@@ -583,6 +672,47 @@ var DitherModal = class extends import_obsidian.Modal {
       this.queuePreviewUpdate();
     });
     cancelBtn.addEventListener("click", () => this.close());
+    savePresetBtn.addEventListener("click", () => {
+      const existingLabels = [...PRESETS, ...this.customPresets].map(
+        (p) => p.label.toLowerCase()
+      );
+      new SavePresetModal(this.app, existingLabels, (name) => {
+        const id = slugifyPresetLabel(name, [
+          ...PRESETS,
+          ...this.customPresets
+        ]);
+        const preset = {
+          id,
+          label: name,
+          hint: "custom",
+          algorithm: this.algorithm,
+          threshold: this.threshold,
+          spread: this.spread,
+          brightness: this.brightness,
+          contrast: this.contrast,
+          resizePercent: this.resizePercent
+        };
+        void this.onSavePreset(preset).then(() => {
+          this.customPresets.push(preset);
+          this.defaultPresetName = preset.id;
+          const hasSep = Array.from(presetSelect.options).some(
+            (o) => o.text === "\u2500\u2500 Custom \u2500\u2500"
+          );
+          if (!hasSep) {
+            const customSep = presetSelect.createEl("option", {
+              text: "\u2500\u2500 Custom \u2500\u2500"
+            });
+            customSep.disabled = true;
+          }
+          presetSelect.createEl("option", {
+            value: preset.id,
+            text: getPresetDisplayLabel(preset)
+          });
+          presetSelect.value = preset.id;
+          new import_obsidian.Notice(`Preset "${name}" saved`);
+        });
+      }).open();
+    });
     useOriginalBtn.addEventListener("click", () => {
       void this.saveImage(true);
     });
@@ -687,7 +817,9 @@ ${width} x ${height} px`
     return { width: targetWidth, height: targetHeight };
   }
   applyPresetByName(name) {
-    const preset = PRESETS.find((p) => p.id === name);
+    const preset = [...PRESETS, ...this.customPresets].find(
+      (p) => p.id === name
+    );
     if (!preset) return;
     this.algorithm = preset.algorithm;
     this.threshold = preset.threshold;
@@ -698,7 +830,7 @@ ${width} x ${height} px`
   }
   getActivePresetName() {
     var _a;
-    const match = PRESETS.find(
+    const match = [...PRESETS, ...this.customPresets].find(
       (preset) => preset.algorithm === this.algorithm && preset.threshold === this.threshold && preset.spread === this.spread && preset.brightness === this.brightness && preset.contrast === this.contrast && preset.resizePercent === this.resizePercent
     );
     return (_a = match == null ? void 0 : match.id) != null ? _a : DEFAULT_SETTINGS.defaultPresetName;
@@ -737,7 +869,8 @@ ${width} x ${height} px`
     };
     let bestPreset = PRESETS[0];
     let bestSavedPercent = -Infinity;
-    for (const preset of PRESETS) {
+    const allPresets = [...PRESETS, ...this.customPresets];
+    for (const preset of allPresets) {
       this.applyPresetByName(preset.id);
       this.applyDefaultResizeWidthIfConfigured();
       const rendered = await this.renderProcessedBlob();
@@ -992,6 +1125,99 @@ ${width} x ${height} px`
     return sanitizeFileBaseName(stripExtension(fileName));
   }
 };
+var ConfirmModal = class extends import_obsidian.Modal {
+  constructor(app, message, detail, onConfirm) {
+    super(app);
+    this.message = message;
+    this.detail = detail;
+    this.onConfirm = onConfirm;
+  }
+  onOpen() {
+    this.titleEl.setText(this.message);
+    this.contentEl.addClass("dither-confirm-modal");
+    if (this.detail) {
+      this.contentEl.createEl("p", {
+        text: this.detail,
+        cls: "dither-confirm-detail"
+      });
+    }
+    const actions = this.contentEl.createDiv({ cls: "dither-confirm-actions" });
+    const cancelBtn = actions.createEl("button", { text: "Cancel" });
+    const confirmBtn = actions.createEl("button", { text: "Delete" });
+    confirmBtn.addClass("mod-warning");
+    cancelBtn.addEventListener("click", () => this.close());
+    confirmBtn.addEventListener("click", () => {
+      this.close();
+      this.onConfirm();
+    });
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var SavePresetModal = class extends import_obsidian.Modal {
+  constructor(app, existingLabels, onConfirm) {
+    super(app);
+    this.existingLabels = existingLabels;
+    this.onConfirm = onConfirm;
+  }
+  onOpen() {
+    this.titleEl.setText("Save as preset");
+    this.contentEl.addClass("dither-save-preset-modal");
+    const input = this.contentEl.createEl("input", {
+      cls: "dither-preset-name-input",
+      attr: { type: "text", placeholder: "e.g. Dark portrait" }
+    });
+    const errorEl = this.contentEl.createDiv({
+      cls: "dither-preset-name-error"
+    });
+    const actions = this.contentEl.createDiv({
+      cls: "dither-save-preset-actions"
+    });
+    const cancelBtn = actions.createEl("button", { text: "Cancel" });
+    const confirmBtn = actions.createEl("button", { text: "Save" });
+    confirmBtn.addClass("mod-cta");
+    const validate = (value) => {
+      const trimmed = value.trim();
+      if (trimmed && this.existingLabels.includes(trimmed.toLowerCase())) {
+        errorEl.setText(
+          `"${trimmed}" already exists \u2014 choose a different name`
+        );
+        errorEl.addClass("is-visible");
+        confirmBtn.setAttr("disabled", "");
+        return false;
+      }
+      errorEl.setText("");
+      errorEl.removeClass("is-visible");
+      confirmBtn.removeAttribute("disabled");
+      return true;
+    };
+    const save = () => {
+      const trimmed = input.value.trim();
+      if (!trimmed || !validate(trimmed)) return;
+      this.close();
+      this.onConfirm(trimmed);
+    };
+    input.addEventListener("input", () => validate(input.value));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") save();
+      if (e.key === "Escape") this.close();
+    });
+    confirmBtn.addEventListener("click", save);
+    cancelBtn.addEventListener("click", () => this.close());
+    setTimeout(() => input.focus(), 0);
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+function slugifyPresetLabel(label, existing) {
+  const base = "custom-" + (label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "preset");
+  if (!existing.some((p) => p.id === base)) return base;
+  let i = 2;
+  while (existing.some((p) => p.id === `${base}-${i}`)) i++;
+  return `${base}-${i}`;
+}
 function toGray(r, g, b) {
   return 0.299 * r + 0.587 * g + 0.114 * b;
 }
