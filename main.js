@@ -26,9 +26,20 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var PRESETS = [
   {
+    id: "blue-noise",
+    label: "Blue Noise",
+    hint: "organic grain",
+    algorithm: "blue-noise",
+    threshold: 128,
+    spread: 20,
+    brightness: 0,
+    contrast: 0,
+    resizePercent: 100
+  },
+  {
     id: "natural-dither",
     label: "Natural Dither",
-    hint: "best default",
+    hint: "error diffusion",
     algorithm: "floyd-steinberg",
     threshold: 128,
     spread: 30,
@@ -43,17 +54,6 @@ var PRESETS = [
     algorithm: "threshold",
     threshold: 140,
     spread: 70,
-    brightness: 0,
-    contrast: 0,
-    resizePercent: 100
-  },
-  {
-    id: "blue-noise",
-    label: "Blue Noise",
-    hint: "organic grain",
-    algorithm: "blue-noise",
-    threshold: 128,
-    spread: 20,
     brightness: 0,
     contrast: 0,
     resizePercent: 100
@@ -721,7 +721,7 @@ ${width} x ${height} px`
     if (this.resizeInputEl)
       this.resizeInputEl.value = String(this.resizePercent);
     if (this.presetSelectEl) {
-      this.presetSelectEl.value = this.defaultPresetName === AUTO_PRESET_OPTION ? AUTO_PRESET_OPTION : this.getActivePresetName();
+      this.presetSelectEl.value = this.defaultPresetName === AUTO_PRESET_OPTION ? AUTO_PRESET_OPTION : this.defaultPresetName;
     }
     this.updateResizeValueLabel();
   }

@@ -23,9 +23,8 @@ Photo by <a href="https://unsplash.com/@momentance?utm_source=unsplash&utm_mediu
 | <img width="240" height="361" alt="image" src="https://github.com/user-attachments/assets/3f18d4b8-db19-465a-b8b4-28a9521c6f5f" /> 272KB | **Floyd-Steinberg** | Error-diffusion; best tonal quality                                                       |
 | <img width="240" height="362" alt="image" src="https://github.com/user-attachments/assets/33a9e33b-3d2b-489b-9b08-3a018cc66073" /> 161KB | **Blue Noise**      | Interleaved gradient noise; organic, film-grain-like pattern with no repetition artifacts |
 | <img width="238" height="359" alt="image" src="https://github.com/user-attachments/assets/b93a099a-957d-4579-aad7-a8dc6823fb0b" /> 190KB | **Ordered (Bayer)** | Matrix-based; structured pattern                                                          |
-
-| <img width="241" height="361" alt="image" src="https://github.com/user-attachments/assets/8e0fae4b-6db8-42d9-ae80-c1c4aea80345" /> 82KB | **Threshold** | Hard cutoff; most aggressive |
-| <img width="240" height="362" alt="image" src="https://github.com/user-attachments/assets/10c4e303-7bd0-40b3-ae81-2cd76588424c" /> 690KB | **Grayscale** | Smooth grayscale conversion; no dithering |
+| <img width="241" height="361" alt="image" src="https://github.com/user-attachments/assets/8e0fae4b-6db8-42d9-ae80-c1c4aea80345" /> 82KB  | **Threshold**       | Hard cutoff; most aggressive                                                              |
+| <img width="240" height="362" alt="image" src="https://github.com/user-attachments/assets/10c4e303-7bd0-40b3-ae81-2cd76588424c" /> 690KB | **Grayscale**       | Smooth grayscale conversion; no dithering                                                 |
 
 ### Controls (per image)
 
@@ -39,6 +38,7 @@ Photo by <a href="https://unsplash.com/@momentance?utm_source=unsplash&utm_mediu
 
 - **Natural Dither** — Floyd-Steinberg at full size; best default
 - **High Contrast** — Threshold algorithm at full size; bold black/white
+- **Blue Noise** — Interleaved gradient noise at full size; organic grain
 - **Grayscale** — Smooth grayscale conversion at full size
 - **Auto (max compression)** — tests all presets and picks the one with the smallest output
 

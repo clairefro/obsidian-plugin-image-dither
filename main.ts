@@ -31,9 +31,20 @@ type Preset = {
 
 const PRESETS: Preset[] = [
   {
+    id: "blue-noise",
+    label: "Blue Noise",
+    hint: "organic grain",
+    algorithm: "blue-noise",
+    threshold: 128,
+    spread: 20,
+    brightness: 0,
+    contrast: 0,
+    resizePercent: 100,
+  },
+  {
     id: "natural-dither",
     label: "Natural Dither",
-    hint: "best default",
+    hint: "error diffusion",
     algorithm: "floyd-steinberg",
     threshold: 128,
     spread: 30,
@@ -48,17 +59,6 @@ const PRESETS: Preset[] = [
     algorithm: "threshold",
     threshold: 140,
     spread: 70,
-    brightness: 0,
-    contrast: 0,
-    resizePercent: 100,
-  },
-  {
-    id: "blue-noise",
-    label: "Blue Noise",
-    hint: "organic grain",
-    algorithm: "blue-noise",
-    threshold: 128,
-    spread: 20,
     brightness: 0,
     contrast: 0,
     resizePercent: 100,
@@ -924,7 +924,7 @@ class DitherModal extends Modal {
       this.presetSelectEl.value =
         this.defaultPresetName === AUTO_PRESET_OPTION
           ? AUTO_PRESET_OPTION
-          : this.getActivePresetName();
+          : this.defaultPresetName;
     }
     this.updateResizeValueLabel();
   }
