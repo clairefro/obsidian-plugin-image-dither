@@ -48,6 +48,17 @@ var PRESETS = [
     resizePercent: 100
   },
   {
+    id: "blue-noise",
+    label: "Blue Noise",
+    hint: "organic grain",
+    algorithm: "blue-noise",
+    threshold: 128,
+    spread: 20,
+    brightness: 0,
+    contrast: 0,
+    resizePercent: 100
+  },
+  {
     id: "grayscale",
     label: "Grayscale",
     hint: "no dithering",
@@ -399,8 +410,8 @@ var DitherModal = class extends import_obsidian.Modal {
     const algorithmSelect = algorithmRow.createEl("select");
     [
       { value: "floyd-steinberg", label: "Floyd-Steinberg" },
-      { value: "ordered", label: "Ordered (Bayer)" },
       { value: "blue-noise", label: "Blue Noise" },
+      { value: "ordered", label: "Ordered (Bayer)" },
       { value: "threshold", label: "Threshold" },
       { value: "grayscale", label: "Grayscale" }
     ].forEach((opt) => {
