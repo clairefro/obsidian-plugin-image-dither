@@ -4,12 +4,11 @@ Intercepts images pasted or dropped into notes so you can aestehtically dither a
 
 ![dith-1](https://github.com/user-attachments/assets/6e9f7146-7124-4ac9-9519-023a4d50e9c0)
 
-
 ## Features
 
 ### Major storage savings!
-<img width="969" height="805" alt="image" src="https://github.com/user-attachments/assets/a0d29f29-9ed7-4f60-a45b-68278c764d9c" />
 
+<img width="969" height="805" alt="image" src="https://github.com/user-attachments/assets/a0d29f29-9ed7-4f60-a45b-68278c764d9c" />
 
 ### Dithering algorithms
 
@@ -18,15 +17,14 @@ Original (2.8MB)
 <img width="225" height="337" alt="image" src="https://github.com/user-attachments/assets/0671d3a3-43e1-4416-a02c-7ec6507a4771" />
 
 Photo by <a href="https://unsplash.com/@momentance?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">SwapnIl Dwivedi</a> on <a href="https://unsplash.com/photos/man-wearing-gray-turban-smoking-cigarette-in-closeup-photography-N2IJ31xZ_ks?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Unsplash</a>
-      
 
-| Visual Example | Algorithm | Description |
-| :--- | :--- | :--- |
-| <img width="240" height="361" alt="image" src="https://github.com/user-attachments/assets/3f18d4b8-db19-465a-b8b4-28a9521c6f5f" /> 272KB| **Floyd-Steinberg** | Error-diffusion; best tonal quality |
-| <img width="238" height="359" alt="image" src="https://github.com/user-attachments/assets/b93a099a-957d-4579-aad7-a8dc6823fb0b" /> 190KB| **Ordered (Bayer)** | Matrix-based; structured pattern |
-| | **Blue Noise** | Interleaved gradient noise; organic, film-grain-like pattern with no repetition artifacts |
-| <img width="241" height="361" alt="image" src="https://github.com/user-attachments/assets/8e0fae4b-6db8-42d9-ae80-c1c4aea80345" /> 82KB| **Threshold** | Hard cutoff; most aggressive |
-| <img width="240" height="362" alt="image" src="https://github.com/user-attachments/assets/10c4e303-7bd0-40b3-ae81-2cd76588424c" /> 690KB| **Grayscale** | Smooth grayscale conversion; no dithering |
+| Visual Example                                                                                                                           | Algorithm           | Description                                                                               |
+| :--------------------------------------------------------------------------------------------------------------------------------------- | :------------------ | :---------------------------------------------------------------------------------------- |
+| <img width="240" height="361" alt="image" src="https://github.com/user-attachments/assets/3f18d4b8-db19-465a-b8b4-28a9521c6f5f" /> 272KB | **Floyd-Steinberg** | Error-diffusion; best tonal quality                                                       |
+| <img width="238" height="359" alt="image" src="https://github.com/user-attachments/assets/b93a099a-957d-4579-aad7-a8dc6823fb0b" /> 190KB | **Ordered (Bayer)** | Matrix-based; structured pattern                                                          |
+|                                                                                                                                          | **Blue Noise**      | Interleaved gradient noise; organic, film-grain-like pattern with no repetition artifacts |
+| <img width="241" height="361" alt="image" src="https://github.com/user-attachments/assets/8e0fae4b-6db8-42d9-ae80-c1c4aea80345" /> 82KB  | **Threshold**       | Hard cutoff; most aggressive                                                              |
+| <img width="240" height="362" alt="image" src="https://github.com/user-attachments/assets/10c4e303-7bd0-40b3-ae81-2cd76588424c" /> 690KB | **Grayscale**       | Smooth grayscale conversion; no dithering                                                 |
 
 ### Controls (per image)
 
@@ -72,7 +70,6 @@ Filenames are automatically deduplicated. If the target name already exists in t
 
 <img width="793" height="491" alt="image" src="https://github.com/user-attachments/assets/b62e212b-2621-4a4a-b797-9379f7d3eb0b" />
 
-
 | Setting                    | Default             | Description                                                                            |
 | -------------------------- | ------------------- | -------------------------------------------------------------------------------------- |
 | Enabled                    | On                  | Toggle paste/drop interception                                                         |
@@ -92,8 +89,8 @@ The ribbon icon also toggles the plugin on/off.
 Images are always saved as **PNG** to the attachment location in specified in your Obsidian preferences > Files and links.
 
 ## More examples
-![dither-demo1](https://github.com/user-attachments/assets/eb5be8ee-c028-4cf1-b581-482027eb7340)
 
+![dither-demo1](https://github.com/user-attachments/assets/eb5be8ee-c028-4cf1-b581-482027eb7340)
 
 <img width="658" height="438" alt="image" src="https://github.com/user-attachments/assets/b5a6912b-9698-4c7a-9324-e602ba576d6e" />
 
@@ -108,9 +105,3 @@ Images are always saved as **PNG** to the attachment location in specified in yo
 <img width="696" height="460" alt="image" src="https://github.com/user-attachments/assets/13c58e03-9806-4eff-806e-3662cab0dad0" />
 
 <img width="818" height="596" alt="image" src="https://github.com/user-attachments/assets/a49aac9b-8857-41f8-b763-b5a4bd3e6654" />
-
-
-
-
-
-
