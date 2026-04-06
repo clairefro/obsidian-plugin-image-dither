@@ -367,12 +367,12 @@ class ImageDitherSettingTab extends PluginSettingTab {
         text: bytesLabel,
       });
       totalLine.appendText(" so far using Image Dither.");
+      const dynamicMessage = getSavingsAllegory(totalBytes);
+      statsSection.createEl("p", {
+        cls: "image-dither-dynamic-message",
+        text: dynamicMessage,
+      });
     }
-    const dynamicMessage = getSavingsAllegory(totalBytes);
-    statsSection.createEl("p", {
-      cls: "image-dither-dynamic-message",
-      text: dynamicMessage,
-    });
   }
 
   private renderFilenameTemplateSetting(containerEl: HTMLElement) {
@@ -1668,10 +1668,6 @@ function compactTimestamp(date: Date) {
 }
 
 function getSavingsAllegory(totalBytes: number) {
-  if (totalBytes <= 0) {
-    return "No savings yet, but your first dithered image will kick this off.";
-  }
-
   const comparisons: Array<() => string> = [
     () =>
       `That's about ${formatNumber(totalBytes / (1.44 * 1024 * 1024))} classic 1.44 MB floppy disks.`,
