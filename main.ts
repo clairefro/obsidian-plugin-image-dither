@@ -14,7 +14,8 @@ type DitherAlgorithm =
   | "grayscale"
   | "threshold"
   | "ordered"
-  | "floyd-steinberg";
+  | "floyd-steinberg"
+  | "blue-noise";
 
 type Preset = {
   id: string;
@@ -548,6 +549,7 @@ class DitherModal extends Modal {
     [
       { value: "floyd-steinberg", label: "Floyd-Steinberg" },
       { value: "ordered", label: "Ordered (Bayer)" },
+      { value: "blue-noise", label: "Blue Noise" },
       { value: "threshold", label: "Threshold" },
       { value: "grayscale", label: "Grayscale" },
     ].forEach((opt) => {
@@ -1044,6 +1046,25 @@ class DitherModal extends Modal {
           const gray = grayBase[y * width + x];
           const threshold = (bayer[y % 4][x % 4] / scale) * 255;
           const bw = gray > threshold ? 255 : 0;
+          const v = this.invertColors ? 255 - bw : bw;
+          data[idx] = v;
+          data[idx + 1] = v;
+          data[idx + 2] = v;
+        }
+      }
+      return;
+    }
+
+    if (this.algorithm === "blue-noise") {
+      // Interleaved Gradient Noise — a blue-noise-like threshold function
+      // by Jorge Jimenez, avoids structured Bayer artifacts
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+          const gray = grayBase[y * width + x];
+          const t =
+            (52.9829189 * (((0.06711056 * x + 0.00583715 * y) % 1) + 1)) % 1;
+          const bw = gray > t * 255 ? 255 : 0;
           const v = this.invertColors ? 255 - bw : bw;
           data[idx] = v;
           data[idx + 1] = v;
