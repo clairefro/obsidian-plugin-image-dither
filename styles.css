@@ -248,9 +248,9 @@
   color: var(--text-success, #4caf50);
 }
 
-.image-dither-stats .image-dither-dynamic-message {
+.image-dither-stats p.image-dither-dynamic-message {
   color: var(--text-muted) !important;
-  margin-bottom: 20px;
+  margin-bottom: 20px !important;
 }
 
 @media (max-width: 720px) {
