@@ -1,4 +1,4 @@
-# Image Dither — Obsidian Plugin
+# Image Dither - Obsidian Plugin
 
 Intercepts images pasted or dropped into notes so you can aestehtically dither and resize them, saving storage space
 
