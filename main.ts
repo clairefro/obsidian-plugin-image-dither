@@ -78,6 +78,40 @@ const PRESETS: Preset[] = [
 
 const AUTO_PRESET_OPTION = "__auto_max_compression__";
 
+const VALID_ALGORITHMS: DitherAlgorithm[] = [
+  "grayscale",
+  "threshold",
+  "ordered",
+  "floyd-steinberg",
+  "blue-noise",
+];
+
+function isValidCustomPreset(p: unknown): p is Preset {
+  if (!p || typeof p !== "object") return false;
+  const x = p as Record<string, unknown>;
+  return (
+    typeof x.id === "string" &&
+    x.id.length > 0 &&
+    x.id.length <= 128 &&
+    typeof x.label === "string" &&
+    x.label.length > 0 &&
+    x.label.length <= 128 &&
+    typeof x.hint === "string" &&
+    x.hint.length <= 128 &&
+    VALID_ALGORITHMS.includes(x.algorithm as DitherAlgorithm) &&
+    typeof x.threshold === "number" &&
+    Number.isFinite(x.threshold) &&
+    typeof x.spread === "number" &&
+    Number.isFinite(x.spread) &&
+    typeof x.brightness === "number" &&
+    Number.isFinite(x.brightness) &&
+    typeof x.contrast === "number" &&
+    Number.isFinite(x.contrast) &&
+    typeof x.resizePercent === "number" &&
+    Number.isFinite(x.resizePercent)
+  );
+}
+
 type ImageDitherSettings = {
   enabled: boolean;
   totalBytesSaved: number;
@@ -196,6 +230,9 @@ export default class ImageDitherPlugin extends Plugin {
         : null;
     if (!Array.isArray(this.settings.customPresets)) {
       this.settings.customPresets = [];
+    } else {
+      this.settings.customPresets =
+        this.settings.customPresets.filter(isValidCustomPreset);
     }
   }
 
@@ -472,11 +509,13 @@ class ImageDitherSettingTab extends PluginSettingTab {
       cls: "dither-settings-section-heading",
     });
     customPresets.forEach((preset) => {
+      const descFrag = document.createDocumentFragment();
+      descFrag.append(
+        `${preset.algorithm} · threshold ${preset.threshold} · sharpness ${preset.spread}% · brightness ${preset.brightness > 0 ? "+" : ""}${preset.brightness}% · contrast ${preset.contrast > 0 ? "+" : ""}${preset.contrast}% · resize ${preset.resizePercent}%`,
+      );
       new Setting(containerEl)
         .setName(preset.label)
-        .setDesc(
-          `${preset.algorithm} · threshold ${preset.threshold} · sharpness ${preset.spread}% · resize ${preset.resizePercent}%`,
-        )
+        .setDesc(descFrag)
         .addButton((btn) => {
           btn
             .setButtonText("Delete")
@@ -1617,6 +1656,8 @@ function stripExtension(fileName: string) {
 
 function sanitizeFileBaseName(name: string) {
   const cleaned = name
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f]/g, "") // strip null bytes and other control chars
     .replace(/[\\/:*?"<>|]/g, "-")
     .replace(/\s+/g, " ")
     .trim()
@@ -1649,7 +1690,7 @@ async function getHyphenIncrementedAttachmentPath(
 
   let attempt = folder ? `${folder}/${filename}` : filename;
   let counter = 1;
-  while (app.vault.getAbstractFileByPath(attempt)) {
+  while (app.vault.getAbstractFileByPath(attempt) && counter <= 9999) {
     const nextName = `${base}-${counter}${ext}`;
     attempt = folder ? `${folder}/${nextName}` : nextName;
     counter++;
