@@ -1651,7 +1651,6 @@ function stripExtension(fileName: string) {
 
 function sanitizeFileBaseName(name: string) {
   const cleaned = name
-    // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x1f\x7f]/g, "") // strip null bytes and other control chars
     .replace(/[\\/:*?"<>|]/g, "-")
     .replace(/\s+/g, " ")
