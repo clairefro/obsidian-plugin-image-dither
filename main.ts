@@ -154,7 +154,6 @@ export default class ImageDitherPlugin extends Plugin {
       name: "Enable",
       callback: async () => {
         await this.setEnabled(true);
-        // eslint-disable-next-line obsidianmd/ui/sentence-case
         new Notice("Image Dither enabled");
       },
     });
@@ -164,7 +163,6 @@ export default class ImageDitherPlugin extends Plugin {
       name: "Disable",
       callback: async () => {
         await this.setEnabled(false);
-        // eslint-disable-next-line obsidianmd/ui/sentence-case
         new Notice("Image Dither disabled");
       },
     });
@@ -504,10 +502,7 @@ class ImageDitherSettingTab extends PluginSettingTab {
   private renderCustomPresetsSetting(containerEl: HTMLElement) {
     const customPresets = this.plugin.getCustomPresets();
     if (customPresets.length === 0) return;
-    containerEl.createEl("h3", {
-      text: "Custom presets",
-      cls: "dither-settings-section-heading",
-    });
+    new Setting(containerEl).setName("Custom presets").setHeading();
     customPresets.forEach((preset) => {
       const descFrag = document.createDocumentFragment();
       descFrag.append(
